@@ -27,7 +27,6 @@ import sys
 import time
 import urllib
 from lxml import etree
-#from HTTP4Store import HTTP4Store
 
 # TODO
 # account for suppressed recs (exception in getbibdata)
@@ -70,7 +69,6 @@ def main():
 			sys.exit('-'*75+'\nThere are no MARC records in the IN directory. Add some and try again.\n'+'-'*75)
 		else:
 			for mrcrec in mrcrecs:
-				#outfile = str.replace(mrcrec,'.xml','')
 				if verbose:
 					print(mrcrec)
 				readmrx(mrcrec,names,subjects)
@@ -103,8 +101,6 @@ def setup():
 			schemelist.append('sub')
 		if names:
 			schemelist.append('nam')
-		#if owis:
-		#	schemelist.append('owi')
 		for scheme in schemelist:
 			try:
 				os.rename(REPORTS+fname+'_'+scheme+'_'+today+'.csv' + '.bak') # just back up output from previous runs on same day
@@ -112,9 +108,6 @@ def setup():
 				pass
 				
 			with open(REPORTS+fname+'_'+scheme+'_'+today+'.csv','wb+') as outfile:
-			#	if scheme == 'owi':
-			#		heading = ['bib','oclcnum','uri']
-			#	else:
 				heading = ['bib','heading','uri']
 				writer = csv.writer(outfile)
 				writer.writerow(heading)
@@ -132,11 +125,7 @@ def cleanup():
 		tempdirs = [INDIR, TMPDIR]
 		for d in tempdirs:
 			if os.path.isdir(d):
-				#choice = raw_input("Delete the temp working folder? [Y/n] ")
-				#if choice in ("Y","y",""):
 				shutil.rmtree(d)
-				#else:
-				#	print(d + ' was NOT removed.')
 			else:
 				print(d + ' didn\'t exist.')
 	
@@ -146,8 +135,6 @@ def cleanup():
 	if fetchngo:
 		msg = outdir_count + ' enhanced records are in OUT dir.'
 		logging.info(msg)
-	#if owis:
-	#	logging.info('Checked OWIs')
 	if csvout:
 		msg = 'Reports are in reports dir.'
 		logging.info(msg)
@@ -235,78 +222,6 @@ def query_4s(label, scheme):
 		return triple.text
 
 
-#def query_oclc(xid):
-	#'''
-	#See the following for parameters:
-	#http://www.oclc.org/developer/develop/web-services/xid-api/xstandardNumber-resource.en.html
-	#'''
-	#XID_RESOLVER = "http://xisbn.worldcat.org/webservices/xid/oclcnum/%s"
-	#WORK_ID = "http://worldcat.org/entity/work/id/"
-	#msg = ''
-	#to_get = XID_RESOLVER % xid
-	#to_get += "?method=getMetadata&format=xml&fl=*" # could also try &fl=owi
-	#to_get += "&ai="+AI
-	## print(to_get)
-	#headers = {"Accept":"application/xml"}
-	#resp = requests.get(to_get, headers=headers, allow_redirects=True)
-	#if resp.status_code == 200:
-		#doc = libxml2.parseDoc(resp.text.encode("UTF-8", errors="ignore"))
-		#ctxt = doc.xpathNewContext()
-		#if ctxt.xpathEval("//@stat[.='overlimit']"):
-			#print("over limit with %s" % xid)
-			#sys.exit(0)
-		#else: 
-			#try:
-				#owi = ctxt.xpathEval("//@owi")[0].content
-				#cleanowi = owi.replace('owi','')
-				#return WORK_ID + cleanowi
-			#except:
-				#print("no owi found")
-				
-	#elif resp.status_code == 404:
-		#msg = "Not found: %s%s" % (xid, os.linesep)
-	#elif resp.status_code == 500:
-		#msg = "Server error (%s)" % xid
-	#else: # resp.status_code isn't 200, 404 or 500:
-		#msg = " Response for %s was " % xid
-		#msg += "%s%s" % (resp.status_code, os.linesep)
-	#print(msg)
-		
-	#time.sleep(1)
-
-
-#def check_owi_cache(ocn):
-	#'''
-	#Check OWI cache
-	#'''
-	#con = lite.connect(DB_FILE)
-	#workid = ''
-	#with con:
-		#con.row_factory = lite.Row
-		#cur = con.cursor()
-		#cur.execute("SELECT * FROM owis WHERE ocn=?",(ocn,))
-		#rows = cur.fetchall()
-		#if len(rows) == 0:
-			#workid = None
-		#else:
-			#for row in rows:
-				#workid = row['uri']
-			#if verbose:
-				#os.sys.stdout.write("[Cache] Found: "+ocn+" "+workid+"\n") 
-	#if workid is None:
-		#workid = query_oclc(ocn)
-		#if workid is not None and workid != '':
-			#try:
-				#with con:
-					#cur = con.cursor() 
-					#newone = (ocn,workid)
-					#cur.executemany("INSERT INTO owis VALUES(?,?)", (newone,))
-			#except:
-				#str(sys.exc_info())
-		
-	#return workid
-
-
 def readmrx(mrcrec,names,subjects):
 	'''
 	Read through a given MARCXML file and copy, inserting $0 as appropriate
@@ -345,7 +260,7 @@ def readmrx(mrcrec,names,subjects):
 						mrx_subs.append(s)
 					h = "--".join(mrx_subs)
 					h.rstrip('\.')
-					tag = n.tag # trash?
+					tag = n.tag # trash? for reporting?
 					uri = query_4s(h,'nam')
 					if uri is not None and uri != '':
 						pymarc.Field.add_subfield(n,"0",uri)
@@ -372,40 +287,11 @@ def readmrx(mrcrec,names,subjects):
 					uri = query_4s(h,'sub')
 					if uri is not None and uri != '':
 						pymarc.Field.add_subfield(f,"0",uri)
-					#fast = get_fast(ocn, h)
-					#if fast is not None and fast != '':
-					#	pymarc.Field.add_subfield(f,"0",fast)
 					if verbose:
 						print('%s, %s, %s' % (bbid, h.decode('utf8'), uri))
 					if csvout or nomarc:
 						write_csv(bbid, h, uri, 'sub')
 					mrx_subs = []
-			#if owis:
-				##=======================
-				## OWIS
-				##=======================
-				#for n in rec.get_fields('035'):
-					#for s in n.get_subfields('a'):
-						#if 'OCoLC' in s:
-							#num = s.replace('(OCoLC)','')
-							#workid = check_owi_cache(str(num))
-							
-				#if workid is not None and workid != '':
-					#field = pymarc.Field(
-					#tag = '787', 
-					#indicators = ['0',' '],
-					#subfields = [
-					#'o', str(workid)
-					#])
-					#rec.add_field(field)
-				#else:
-					#workid = str(workid)
-					
-				#if verbose:
-					#print('%s, %s, %s' % (bbid, num, workid))
-					
-				#if csvout:
-					#write_csv(bbid, num, workid, 'owi')
 					
 			if nomarc == False:
 				out = "%s" % (pymarc.record_to_xml(rec))
@@ -441,25 +327,21 @@ def write_csv(bbid, heading, uri, scheme):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Generate hold reports.')
 	parser.add_argument("-v", "--verbose",required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
-	#parser.add_argument("-p", "--prettify",required=False, default=True, dest="prettify", action="store_true", help="Format resulting marcxml. Doesn't matter if using -N (no MARCXML output).")
 	parser.add_argument("-n", "--names", required=False, default=False, dest="names", action="store_true", help="Get URIs for names.")
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
 	parser.add_argument("-r", "--report", required=False, default=False, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
 	parser.add_argument("-f", "--fetch",type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
 	parser.add_argument("-F", "--Fetch",type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
-	#parser.add_argument("-o", "--owi", required=False, default=False, dest="owis", action="store_true", help="Get OCLC Work Ids.")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
-	#prettify = args['prettify']
 	names = args['names']
 	subjects = args['subjects']
 	nomarc = args['nomarc']
 	csvout = args['csvout']
 	justfetch = args['justfetch']
 	fetchngo = args['fetchngo']
-	#owis = args['owis']
 	fname = ''
 	
 	if justfetch or fetchngo:
