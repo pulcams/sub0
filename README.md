@@ -4,7 +4,7 @@
 
 <b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
-The starting point is a list of bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory.
+The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory.
 
 Name and Subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [4store](http://4store.org/).
 ```
@@ -18,7 +18,7 @@ sudo 4s-backend lcsaf
 sudo 4s-import --verbose lcsaf ~/Downloads/subjects-skos-20140306.nt
 sudo 4s-httpd lcsaf -p 8000
 ```
-Do the same for lcnaf (Oct 2014 file takes about 20G of disk space).
+Do the same for lcnaf, using port 8001 (note: Oct 2014 file takes about 20G of disk space).
 
 ### Examples
 
@@ -30,15 +30,17 @@ Another option: Get a bunch of records into the `./in` directory...
 
 `python uris.py -v -f csv/my_bibs.csv` 
 
-...then parse them, getting URIs for names... 
+...then parse them, getting URIs for names and inserting them into copies... 
 
 `python uris.py -vn`
+
+Enhanced MARCXML records will be in the `./out` dir.
 
 For 'help':
 
 `python uris.py -h`
 
-### Dependencies:
+### Dependencies
  * [4store](http://4store.org/)
  * libxml2 (`sudo apt-get install python-libxml2`)
  * sqlite3 (`sudo apt-get install sqlite3 libsqlite3-dev`)
@@ -47,7 +49,7 @@ For 'help':
    (`pip install requests`)
  * xmllint (`sudo apt-get install libxml2-utils`)
    
-### Makes use of:
+### Makes use of
  * [id.loc.gov](http://id.loc.gov/)
  * <strike>[OCLC xID service](https://www.oclc.org/developer/develop/web-services/xid-api.en.html) (production-level access)</strike>
  * local (Princeton) bibdata service (marc_liberation)
