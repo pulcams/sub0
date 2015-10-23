@@ -18,18 +18,21 @@ sudo 4s-backend lcsaf
 sudo 4s-import --verbose lcsaf ~/Downloads/subjects-skos-20140306.nt
 sudo 4s-httpd lcsaf -p 8000
 ```
-Do the same for lcnaf.
+Do the same for lcnaf (Oct 2014 file takes about 20G of disk space).
 
 ### Examples
 
 Retrieve Voyager records, check names and subjects against lcnaf and lcsaf, and generate enhanced copies as well as csv reports: 
 
-`python uris.py -vcns -F csv/my_bibs.csv`
+`python uris.py -vnsr -F csv/my_bibs.csv`
 
-Get a bunch of records into the `./in` directory...
+Another option: Get a bunch of records into the `./in` directory...
+
 `python uris.py -v -f csv/my_bibs.csv` 
-...then parse them... 
-`python uris.py -sn`
+
+...then parse them, getting URIs for names... 
+
+`python uris.py -vn`
 
 For 'help':
 
