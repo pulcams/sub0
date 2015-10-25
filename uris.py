@@ -281,11 +281,12 @@ def check(bbid,rec,scheme):
 			s = s.encode('utf8').strip()
 			mrx_subs.append(s)
 		h = "--".join(mrx_subs)
+		h = h.replace(',--',', ')
 		uri = query_4s(h,scheme)
 		if uri is None:
 			h = h.rstrip('.').rstrip(',') # TODO regex?
 			uri = query_4s(h,scheme)
-		if uri is not None and uri != '':
+		if nomarc == False and uri is not None and uri != '':
 			pymarc.Field.add_subfield(f,"0",uri)
 			# TODO get count for log
 		if verbose:
