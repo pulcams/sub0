@@ -21,7 +21,7 @@ import pymarc
 import re
 import requests
 import shutil
-import sqlite3 as lite
+#import sqlite3 as lite
 import subprocess
 import sys
 import time
@@ -29,22 +29,23 @@ import urllib
 from lxml import etree
 
 # TODO
+# commit push tmpl / added strip()
 # account for suppressed recs (exception in getbibdata)
-# better logging
+# better logging--count of records checked, count of fields checked, uris vs not
 #X remove OWI (defunct)
-#X add delete -N and make -C (for 'report plus MARC')
+#X add delete -N and make -C for 'report plus MARC')
 
 # config
 config = ConfigParser.RawConfigParser()
-config.read('./config/sub0.cfg')
-#config.read('./config/sub0_aws.cfg') # <= aws ec2 instance
+config.read('./config/uris.cfg')
+#config.read('./config/uris_aws.cfg') # <= aws ec2 instance
 OUTDIR = config.get('env', 'outdir')
 INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
 REPORTS = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
 DB_FILE =  config.get('env', 'db')
-AI =  config.get('env', 'ai')
+#AI =  config.get('env', 'ai')
 
 workid = ''
 today = time.strftime('%Y%m%d') # name log files
@@ -68,7 +69,7 @@ def main():
 		if not mrcrecs:
 			sys.exit('-'*75+'\nThere are no MARC records in the IN directory. Add some and try again.\n'+'-'*75)
 		else:
-			for mrcrec in mrcrecs:
+			for mrcrec in mrcrecs: # TODO get count for log
 				if verbose:
 					print(mrcrec)
 				readmrx(mrcrec,names,subjects)
@@ -121,8 +122,8 @@ def cleanup():
 	indir_count = str(len([name for name in os.listdir(INDIR) if os.path.isfile(os.path.join(INDIR, name))]))
 	outdir_count = str(len([name for name in os.listdir(OUTDIR) if os.path.isfile(os.path.join(OUTDIR, name))]))
 	
-	if justfetch is None: # if not just fetching files, delete IN dir too
-		tempdirs = [INDIR, TMPDIR]
+	if justfetch is None and keep == False:
+		tempdirs = [TMPDIR]
 		for d in tempdirs:
 			if os.path.isdir(d):
 				shutil.rmtree(d)
@@ -158,7 +159,7 @@ def getbibdata():
 	else:
 		picklist = justfetch
 	
-	with open(picklist,'rb') as csvfile:
+	with open(picklist,'rb') as csvfile: # TODO get count for log
 			reader = csv.reader(csvfile,delimiter=',', quotechar='"')
 			firstline = reader.next() # skip header row
 			
@@ -189,7 +190,7 @@ def getbibdata():
 					time.sleep(1)
 					if justfetch is None:
 						readmrx(bibid+'.mrx',names,subjects)
-				except: #TODO pass? (As when record has been suppressed after initial report was run)
+				except: #TODO pass? (As when record has been suppressed after initial report was run, in which case, no xml)
 					etype,evalue,etraceback = sys.exc_info()
 					flag = "problem: %s %s %s" % (etype,evalue,etraceback)
 					f2.write("%s %s\n" % (bibid, flag))
@@ -204,7 +205,7 @@ def query_4s(label, scheme):
 	'''
 	SPARQL query
 	'''
-	# SPARQL endpoint(s), one for each scheme (name, subjects)
+	# SPARQL endpoint(s), one for each scheme (names, subjects)
 	if scheme == 'nam':
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
@@ -226,9 +227,6 @@ def readmrx(mrcrec,names,subjects):
 	'''
 	Read through a given MARCXML file and copy, inserting $0 as appropriate
 	'''
-	mrx_subs = []
-	workid = ''
-	num = ''
 	mrxheader = """<?xml version="1.0" encoding="UTF-8" ?>
 	<collection xmlns="http://www.loc.gov/MARC21/slim" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.loc.gov/MARC21/slim http://www.loc.gov/standards/marcxml/schema/MARC21slim.xsd">"""
 	try:
@@ -248,60 +246,18 @@ def readmrx(mrcrec,names,subjects):
 			for b in f001:
 				bbid = b.value()
 			if names:
-				#=======================
-				# NAMES
-				#=======================
-				# get names data from these subfields
-				namesubf = ['a','c','d','q']
-				names = ['100','110','130','700','710','730']
-				for n in rec.get_fields(*names):
-					for s in n.get_subfields(*namesubf):
-						s = s.encode('utf8')
-						mrx_subs.append(s)
-					h = "--".join(mrx_subs)
-					h.rstrip('\.')
-					tag = n.tag # trash? for reporting?
-					uri = query_4s(h,'nam')
-					if uri is not None and uri != '':
-						pymarc.Field.add_subfield(n,"0",uri)
-					if verbose:
-						print('%s, %s, %s' % (bbid, h.decode('utf8'), uri))
-					if csvout or nomarc:
-						write_csv(bbid, h, uri, 'nam')
-					mrx_subs = []
+				r = check(bbid,rec,'nam')
 			if subjects:
-				#=======================
-				# SUBJECTS
-				#=======================
-				# get subjects data from these subfields (all but 0,2,3,6,8)
-				subs = ['600','610','611','630','650','651']
-				subsubf = ['a', 'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 
-				'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'x', 'y', 'z', '4'] 
-				for f in rec.get_fields(*subs):
-					for s in f.get_subfields(*subsubf):
-						s = s.encode('utf8')
-						mrx_subs.append(s)
-					h = "--".join(mrx_subs)
-					h = h.rstrip('\.')
-					tag = f.tag # trash? for reporting?
-					uri = query_4s(h,'sub')
-					if uri is not None and uri != '':
-						pymarc.Field.add_subfield(f,"0",uri)
-					if verbose:
-						print('%s, %s, %s' % (bbid, h.decode('utf8'), uri))
-					if csvout or nomarc:
-						write_csv(bbid, h, uri, 'sub')
-					mrx_subs = []
-					
+				r = check(bbid,rec,'sub')	
 			if nomarc == False:
-				out = "%s" % (pymarc.record_to_xml(rec))
+				out = "%s" % (pymarc.record_to_xml(r))
 				fh.write(out)
 		if nomarc == False:
 			fh.write("</collection>")
 			fh.close()
 	except:
 		etype,evalue,etraceback = sys.exc_info()
-		print("problem: %s" % evalue)
+		print("readmrx problem: %s %s" % (etype,evalue))
 
 	if not nomarc:
 		try:
@@ -310,8 +266,39 @@ def readmrx(mrcrec,names,subjects):
 			etype,evalue,etraceback = sys.exc_info()
 			print("xmllint problem: %s" % evalue)
 				
-	if justfetch is None:
+	# uncomment this to delete each record immediately after processing
+	if justfetch is None and keep == False:
 		os.remove(INDIR+mrcrec)
+
+def check(bbid,rec,scheme):
+	mrx_subs = []
+	if scheme == 'sub':
+		# get subjects data from these subfields (all but 0,2,3,6,8)
+		fields = ['600','610','611','630','650','651']
+		subfields = ['a', 'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 
+	'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'x', 'y', 'z', '4']
+	elif scheme == 'nam':
+		# get names data from these subfields
+		fields = ['100','110','130','700','710','730']
+		subfields = ['a','c','d','q']
+	for f in rec.get_fields(*fields):
+		for s in f.get_subfields(*subfields):
+			s = s.encode('utf8').strip()
+			mrx_subs.append(s)
+		h = "--".join(mrx_subs)
+		uri = query_4s(h,scheme)
+		if uri is None:
+			h = h.rstrip('.').rstrip(',') # TODO regex?
+			uri = query_4s(h,scheme)
+		if uri is not None and uri != '':
+			pymarc.Field.add_subfield(f,"0",uri)
+			# TODO get count for log
+		if verbose:
+			print('%s, %s, %s' % (bbid, h.decode('utf8'), uri))
+		if csvout or nomarc:
+			write_csv(bbid, h, uri, scheme)
+		mrx_subs = []
+	return rec
 
 
 def write_csv(bbid, heading, uri, scheme):
@@ -331,8 +318,9 @@ if __name__ == "__main__":
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
 	parser.add_argument("-r", "--report", required=False, default=False, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
-	parser.add_argument("-f", "--fetch",type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
-	parser.add_argument("-F", "--Fetch",type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
+	parser.add_argument("-f", "--fetch", type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
+	parser.add_argument("-F", "--Fetch", type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
+	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
@@ -342,6 +330,7 @@ if __name__ == "__main__":
 	csvout = args['csvout']
 	justfetch = args['justfetch']
 	fetchngo = args['fetchngo']
+	keep = args['keep']
 	fname = ''
 	
 	if justfetch or fetchngo:
