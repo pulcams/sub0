@@ -43,7 +43,7 @@ For 'help':
 ### Dependencies
  * [4store](http://4store.org/)
  * libxml2 (`sudo apt-get install python-libxml2`)
- * sqlite3 (`sudo apt-get install sqlite3 libsqlite3-dev`)
+ * <strike>sqlite3 (`sudo apt-get install sqlite3 libsqlite3-dev`)</strike>
  * [pymarc](https://github.com/edsu/pymarc) (`pip install pymarc`)
  * [requests](http://docs.python-requests.org/en/latest/index.html)
    (`pip install requests`)
