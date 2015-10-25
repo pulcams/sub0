@@ -21,7 +21,6 @@ import pymarc
 import re
 import requests
 import shutil
-#import sqlite3 as lite
 import subprocess
 import sys
 import time
@@ -29,7 +28,6 @@ import urllib
 from lxml import etree
 
 # TODO
-# commit push tmpl / added strip()
 # account for suppressed recs (exception in getbibdata)
 # better logging--count of records checked, count of fields checked, uris vs not
 #X remove OWI (defunct)
@@ -44,10 +42,7 @@ INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
 REPORTS = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
-DB_FILE =  config.get('env', 'db')
-#AI =  config.get('env', 'ai')
 
-workid = ''
 today = time.strftime('%Y%m%d') # name log files
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',filename=LOG+today+'.log',level=logging.INFO)
