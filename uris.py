@@ -28,6 +28,7 @@ import urllib
 from lxml import etree
 
 # TODO
+# ping id.loc when not found in (old) downloaded files
 # account for suppressed recs (exception in getbibdata)
 # better logging--count of records checked, count of fields checked, uris vs not
 #X remove OWI (defunct)
