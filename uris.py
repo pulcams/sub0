@@ -21,14 +21,18 @@ import pymarc
 import re
 import requests
 import shutil
+import sqlite3 as lite
+import string
 import subprocess
 import sys
 import time
 import urllib
+from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO
-# ping id.loc when not found in (old) downloaded files
+# cache for id.loc
+#X ping id.loc when not found in (old) downloaded files
 # account for suppressed recs (exception in getbibdata)
 # better logging--count of records checked, count of fields checked, uris vs not
 #X remove OWI (defunct)
@@ -43,14 +47,29 @@ INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
 REPORTS = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
+DB = config.get('db','sqlite')
+ID_SUBJECT_RESOLVER = "http://id.loc.gov/authorities/label/"
 
 today = time.strftime('%Y%m%d') # name log files
+todaydb = time.strftime('%Y-%m-%d') # date to check against db
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',filename=LOG+today+'.log',level=logging.INFO)
 # the following two lines disable the default logging of requests.get()
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+class HeadingNotFoundException(Exception):
+	def __init__(self, msg, heading, type, instead=None):
+		super(HeadingNotFoundException, self).__init__(msg)
+		"""
+		@param msg: Message for logging
+		@param heading: The heading we were searching when this was raised
+		@param type: The type of heading (personal or corporate) 
+		@param instead: The "Use instead" URI and string when heading is deprecated
+		"""
+		self.heading = heading
+		self.type = type
+		self.instead = instead
 
 def main():
 	'''
@@ -93,19 +112,20 @@ def setup():
 		os.makedirs(LOG)
 	
 	schemelist = []
-	if csvout and (subjects or names): #or owis):
+	if (csvout or nomarc) and (subjects or names): #or owis):
 		if subjects:
 			schemelist.append('sub')
 		if names:
 			schemelist.append('nam')
 		for scheme in schemelist:
+			rpt = REPORTS+fname+'_'+scheme+'_'+today+'.csv'
 			try:
-				os.rename(REPORTS+fname+'_'+scheme+'_'+today+'.csv' + '.bak') # just back up output from previous runs on same day
+				os.rename(rpt, rpt + '.bak') # just back up output from previous runs on same day
 			except OSError:
 				pass
 				
-			with open(REPORTS+fname+'_'+scheme+'_'+today+'.csv','wb+') as outfile:
-				heading = ['bib','heading','uri']
+			with open(rpt,'wb+') as outfile:
+				heading = ['bib','heading','uri','source']
 				writer = csv.writer(outfile)
 				writer.writerow(heading)
 
@@ -211,10 +231,11 @@ def query_4s(label, scheme):
 	data = { "query": query }
 	
 	r = requests.post(host + "sparql/", data=data)
-	if r.status_code != requests.codes.ok:   # something went wrong
+	if r.status_code != requests.codes.ok:   # <= something went wrong
 		print(label, r.text)
 
 	doc = etree.fromstring(r.text)
+
 	for triple in doc.xpath("//sparql:binding[@name='s']/sparql:uri",namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
 		return triple.text
 
@@ -266,8 +287,79 @@ def readmrx(mrcrec,names,subjects):
 	if justfetch is None and keep == False:
 		os.remove(INDIR+mrcrec)
 
+
+def query_lc(subject, scheme):
+	"""
+	Query id.loc.gov (but only after checking the local file)
+	"""
+	# First, check the cache
+	src = 'id.loc.gov'
+	cached = False
+	con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
+	with con:
+		con.row_factory = lite.Row
+		cur = con.cursor()
+		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
+		rows = cur.fetchall()
+		if len(rows) != 0:
+			cached = True
+			for row in rows:
+				uri = row['uri']
+				dbscheme = row['scheme']
+				date = row['date']
+	if con:
+		con.close()	
+	if cached == True and date is not None:
+		date2 = datetime.strptime(todaydb,'%Y-%m-%d')
+		date1 = datetime.strptime(str(date),'%Y%m%d')
+		datediff = abs((date2 - date1).days)
+	if (cached == True and datediff <= maxage):
+		src += ' (cache)'
+		return uri,src
+	elif (cached == True and datediff > maxage) or cached == False:
+		# ping id.loc only if not found in cache, or if checked long, long ago
+		to_get = ID_SUBJECT_RESOLVER + subject
+		headers = {"Accept":"application/xml"}
+		resp = requests.get(to_get, headers=headers, allow_redirects=True)
+		if resp.status_code == 200:
+			uri = resp.headers["x-uri"]
+			if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
+				try: 
+					label = resp.headers["x-preflabel"]
+				except: # x-preflabel is not returned for deprecated headings
+					uri = "None (deprecated)"
+					tree = html.fromstring(resp.text)
+					see = tree.xpath("//h3/text()= 'Use Instead'") # this info isn't in the header, so grabbing from html
+					seeother = ''
+					if see:
+						other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
+						seeother = (other.attrib['href'], other.text)
+					raise HeadingNotFoundException(msg, subject, 'subject',seeother) # put the see other url and value into the db
+	
+				# TODO: check that uri matches scheme
+				
+				with con:
+					cur = con.cursor() 
+					if cached == True:
+						updateurl = (today, subject.decode('utf8'), uri)
+						cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
+						src+=' (cache)'
+					else:
+						newuri = (subject.decode('utf8'), scheme, uri, today)
+						cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
+				if con:
+					con.close()
+				return uri, src # ==>
+			
+		elif resp.status_code == 404:
+			msg = "None (404)"
+			return msg,src
+		else: # resp.status_code != 404 and status != 200:
+			msg = "None (" + resp.status_code + ")"
+			return msg,src
+
+
 def check(bbid,rec,scheme):
-	mrx_subs = []
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
 		fields = ['600','610','611','630','650','651']
@@ -278,33 +370,55 @@ def check(bbid,rec,scheme):
 		fields = ['100','110','130','700','710','730']
 		subfields = ['a','c','d','q']
 	for f in rec.get_fields(*fields):
+		mrx_subs = []
+		h1 = ''
+		h2 = ''
+		src = '4store'
 		for s in f.get_subfields(*subfields):
 			s = s.encode('utf8').strip()
 			mrx_subs.append(s)
 		h = "--".join(mrx_subs)
 		h = h.replace(',--',', ')
 		uri = query_4s(h,scheme)
+		src = '4store'
 		if uri is None:
-			h = h.rstrip('.').rstrip(',') # TODO regex?
-			uri = query_4s(h,scheme)
-		if nomarc == False and uri is not None and uri != '':
+			h1 = h.rstrip('.').rstrip(',')
+			uri = query_4s(h1,scheme)
+			src = '4store'
+		if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
+			uri,src = query_lc(h,scheme)
+			if not uri.startswith('http'): # <= if not found, try without trailing punct.
+				h2 = h.rstrip('.').rstrip(',')
+				uri,src = query_lc(h2,scheme)
+		if nomarc == False and uri is not None and not uri.startswith('http'):
 			pymarc.Field.add_subfield(f,"0",uri)
 			# TODO get count for log
+			
+		if (h2 != '' and uri.startswith('http') == True):
+			heading = h2
+		elif (h1 != '' and uri.startswith('http') == True):
+			heading = h1
+		elif ((h2 != '' or h1 != '') and not uri.startswith('http')):
+			# if heading wasn't found, it was tested with and without trailing punct. so
+			# put trailing punct. in brackets to signify this. 
+			heading = h[:-1] + '['+h[-1:]+']'
+		else:
+			heading = h
+
 		if verbose:
-			print('%s, %s, %s' % (bbid, h.decode('utf8'), uri))
+			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri,src))
 		if csvout or nomarc:
-			write_csv(bbid, h, uri, scheme)
-		mrx_subs = []
+			write_csv(bbid, heading, uri, scheme,src)
 	return rec
 
 
-def write_csv(bbid, heading, uri, scheme):
+def write_csv(bbid, heading, uri, scheme, src):
 	'''
 	Write out csv reports
 	'''
 	with open(REPORTS+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
-		row = (bbid, heading, uri)
+		row = (bbid, heading, uri,src)
 		writer.writerow(row)
 
 	
@@ -318,6 +432,8 @@ if __name__ == "__main__":
 	parser.add_argument("-f", "--fetch", type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
 	parser.add_argument("-F", "--Fetch", type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
 	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
+	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check WorldCat",required=False, default=30)
+	parser.add_argument('-i','--ignore',dest="noidloc",required=False, default=False, action="store_true",help="Ignore id.loc.gov")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
@@ -328,6 +444,8 @@ if __name__ == "__main__":
 	justfetch = args['justfetch']
 	fetchngo = args['fetchngo']
 	keep = args['keep']
+	maxage = int(args['maxage'])
+	noidloc = args['noidloc']
 	fname = ''
 	
 	if justfetch or fetchngo:
