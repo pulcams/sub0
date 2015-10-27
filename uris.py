@@ -31,7 +31,7 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO
-# cache for id.loc
+#X cache for id.loc
 #X ping id.loc when not found in (old) downloaded files
 # account for suppressed recs (exception in getbibdata)
 # better logging--count of records checked, count of fields checked, uris vs not
