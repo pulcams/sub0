@@ -147,7 +147,7 @@ def cleanup():
 				print(d + ' didn\'t exist.')
 	
 	if justfetch or fetchngo:
-		msg = indir_count + ' mrx files were put into the IN dir.'
+		msg = indir_count + ' mrx files are in the IN dir.'
 		logging.info(msg)
 	if fetchngo:
 		msg = outdir_count + ' enhanced records are in OUT dir.'
@@ -307,8 +307,6 @@ def query_lc(subject, scheme):
 				uri = row['uri']
 				dbscheme = row['scheme']
 				date = row['date']
-	if con:
-		con.close()	
 	if cached == True and date is not None:
 		date2 = datetime.strptime(todaydb,'%Y-%m-%d')
 		date1 = datetime.strptime(str(date),'%Y%m%d')
@@ -379,16 +377,19 @@ def check(bbid,rec,scheme):
 			mrx_subs.append(s)
 		h = "--".join(mrx_subs)
 		h = h.replace(',--',', ')
+		h = h.replace('--(',' (') # $q
 		uri = query_4s(h,scheme)
 		src = '4store'
 		if uri is None:
 			h1 = h.rstrip('.').rstrip(',')
+			h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
 			uri = query_4s(h1,scheme)
 			src = '4store'
 		if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
 			uri,src = query_lc(h,scheme)
 			if not uri.startswith('http'): # <= if not found, try without trailing punct.
 				h2 = h.rstrip('.').rstrip(',')
+				h2 = re.sub('(^\[|\]$)','',h2)
 				uri,src = query_lc(h2,scheme)
 		if nomarc == False and uri is not None and not uri.startswith('http'):
 			pymarc.Field.add_subfield(f,"0",uri)
@@ -398,17 +399,15 @@ def check(bbid,rec,scheme):
 			heading = h2
 		elif (h1 != '' and uri.startswith('http') == True):
 			heading = h1
-		elif ((h2 != '' or h1 != '') and not uri.startswith('http')):
-			# if heading wasn't found, it was tested with and without trailing punct. so
-			# put trailing punct. in brackets to signify this. 
+		elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
 			heading = h[:-1] + '['+h[-1:]+']'
 		else:
 			heading = h
 
 		if verbose:
-			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri,src))
+			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
-			write_csv(bbid, heading, uri, scheme,src)
+			write_csv(bbid, heading, uri, scheme, src)
 	return rec
 
 
