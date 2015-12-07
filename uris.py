@@ -4,6 +4,9 @@
 Linked data prep. Get URIs and (optionally) insert $0 into MARCXML records.
 Works with lcnaf and lcsaf in 4store.
 
+sudo ./start-4store.sh
+python uris.py -vnRk
+
 python uris.py -h
 
 from 20151023
@@ -16,7 +19,7 @@ import httplib
 import logging
 import libxml2
 import os
-import pickle
+import pickle # remove
 import pymarc
 import re
 import requests
@@ -31,10 +34,13 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO
-#X cache for id.loc
-#X ping id.loc when not found in (old) downloaded files
+# account for variation in output (timing?)
 # account for suppressed recs (exception in getbibdata)
 # better logging--count of records checked, count of fields checked, uris vs not
+# separate script which queries vger against cache of bibs already checked
+#X test for existing id.loc $0
+#X cache for id.loc
+#X ping id.loc when not found in (old) downloaded files
 #X remove OWI (defunct)
 #X add delete -N and make -C for 'report plus MARC')
 
@@ -81,6 +87,7 @@ def main():
 		getbibdata()
 	else: # if parsing files already in the IN dir
 		mrcrecs = os.walk(INDIR).next()[2]
+		mrcrecs.sort(key=alphanum_key)
 		if not mrcrecs:
 			sys.exit('-'*75+'\nThere are no MARC records in the IN directory. Add some and try again.\n'+'-'*75)
 		else:
@@ -88,6 +95,23 @@ def main():
 				if verbose:
 					print(mrcrec)
 				readmrx(mrcrec,names,subjects)
+
+
+def tryint(s):
+	'''
+	Toward sorting filenames. Used in alphanum_key. Nicked from GH.
+	'''
+	try:
+		return int(s)
+	except ValueError:
+		return s
+
+
+def alphanum_key(s):
+	'''
+	For sorting filenames
+	'''
+	return [tryint(c) for c in re.split('([0-9]+)', s)]
 
 
 def setup():
@@ -125,7 +149,7 @@ def setup():
 				pass
 				
 			with open(rpt,'wb+') as outfile:
-				heading = ['bib','heading','uri','source']
+				heading = ['bib','heading','uri','tag','source']
 				writer = csv.writer(outfile)
 				writer.writerow(heading)
 
@@ -203,7 +227,7 @@ def getbibdata():
 					f.close()
 					flag = "ok"
 					f2.write("%s %s\n" % (bibid, flag))
-					time.sleep(1)
+					#time.sleep(1)
 					if justfetch is None:
 						readmrx(bibid+'.mrx',names,subjects)
 				except: #TODO pass? (As when record has been suppressed after initial report was run, in which case, no xml)
@@ -226,11 +250,14 @@ def query_4s(label, scheme):
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-
+	#label = urllib.quote_plus(label) # this doesn't work
+	label = label.replace('"',"%20") # TODO: check this. see bib 568 "Problemna...".
 	query = 'SELECT ?s WHERE { ?s ?p "%s"@en . }' % label
-	data = { "query": query }
+	#print(query)
+	data = { 'query': query}
+	headers={ 'content-type':'application/x-www-form-urlencoded'}
 	
-	r = requests.post(host + "sparql/", data=data)
+	r = requests.post(host + "sparql/", data=data, headers=headers )
 	if r.status_code != requests.codes.ok:   # <= something went wrong
 		print(label, r.text)
 
@@ -274,7 +301,10 @@ def readmrx(mrcrec,names,subjects):
 			fh.close()
 	except:
 		etype,evalue,etraceback = sys.exc_info()
-		print("readmrx problem: %s %s" % (etype,evalue))
+		flag = "readmrx problem: %s %s %s" % (etype,evalue,etraceback)
+		if csvout or nomarc: # idea is to report something out even when mrx has issues
+			write_csv(bbid,flag,'',scheme, '','')
+		print(flag)
 
 	if not nomarc:
 		try:
@@ -283,7 +313,6 @@ def readmrx(mrcrec,names,subjects):
 			etype,evalue,etraceback = sys.exc_info()
 			print("xmllint problem: %s" % evalue)
 				
-	# uncomment this to delete each record immediately after processing
 	if justfetch is None and keep == False:
 		os.remove(INDIR+mrcrec)
 
@@ -318,6 +347,7 @@ def query_lc(subject, scheme):
 		# ping id.loc only if not found in cache, or if checked long, long ago
 		to_get = ID_SUBJECT_RESOLVER + subject
 		headers = {"Accept":"application/xml"}
+		time.sleep(1)
 		resp = requests.get(to_get, headers=headers, allow_redirects=True)
 		if resp.status_code == 200:
 			uri = resp.headers["x-uri"]
@@ -333,8 +363,6 @@ def query_lc(subject, scheme):
 						other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
 						seeother = (other.attrib['href'], other.text)
 					raise HeadingNotFoundException(msg, subject, 'subject',seeother) # put the see other url and value into the db
-	
-				# TODO: check that uri matches scheme
 				
 				with con:
 					cur = con.cursor() 
@@ -366,7 +394,7 @@ def check(bbid,rec,scheme):
 	elif scheme == 'nam':
 		# get names data from these subfields
 		fields = ['100','110','130','700','710','730']
-		subfields = ['a','c','d','q']
+		subfields = ['a','b','c','d','q']
 	for f in rec.get_fields(*fields):
 		mrx_subs = []
 		h1 = ''
@@ -391,9 +419,20 @@ def check(bbid,rec,scheme):
 				h2 = h.rstrip('.').rstrip(',')
 				h2 = re.sub('(^\[|\]$)','',h2)
 				uri,src = query_lc(h2,scheme)
-		if nomarc == False and uri is not None and not uri.startswith('http'):
-			pymarc.Field.add_subfield(f,"0",uri)
-			# TODO get count for log
+		if nomarc == False and uri is not None and uri.startswith('http'):
+			# check for existing id.loc $0 and compare if present
+			existing_sub0 = f.get_subfields('0')
+			if existing_sub0 is not None:
+				if existing_sub0 != uri:
+					if 'id.loc.gov/' + scheme in existing_sub0:
+						src = 'already has %s' % existing_sub0
+						#pymarc.Field.delete_subfield(f,"0") # <= if the url is id.loc.gov and is different
+						#pymarc.Field.add_subfield(f,"0",uri)
+					else:
+						pymarc.Field.add_subfield(f,"0",uri)
+			else:
+				pymarc.Field.add_subfield(f,"0",uri)
+			# TODO: get count for log
 			
 		if (h2 != '' and uri.startswith('http') == True):
 			heading = h2
@@ -407,17 +446,17 @@ def check(bbid,rec,scheme):
 		if verbose:
 			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
-			write_csv(bbid, heading, uri, scheme, src)
+			write_csv(bbid, heading, uri, scheme,f.tag,src)
 	return rec
 
 
-def write_csv(bbid, heading, uri, scheme, src):
+def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
 	Write out csv reports
 	'''
 	with open(REPORTS+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
-		row = (bbid, heading, uri,src)
+		row = (bbid, heading, uri, tag, src)
 		writer.writerow(row)
 
 	
@@ -427,7 +466,7 @@ if __name__ == "__main__":
 	parser.add_argument("-n", "--names", required=False, default=False, dest="names", action="store_true", help="Get URIs for names.")
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
 	parser.add_argument("-r", "--report", required=False, default=False, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
-	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
+	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records. Overrides -F.")
 	parser.add_argument("-f", "--fetch", type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
 	parser.add_argument("-F", "--Fetch", type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
 	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
