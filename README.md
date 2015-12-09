@@ -21,7 +21,6 @@ sudo 4s-httpd lcsaf -p 8000
 Do the same for lcnaf, using say port 8001 (note: Oct 2014 file takes about 20G of disk space).
 
 ### Examples
-
 Retrieve Voyager records, check names and subjects against lcnaf and lcsaf, and generate enhanced copies as well as csv reports: 
 
 `python uris.py -vnsr -F csv/my_bibs.csv`
