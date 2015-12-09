@@ -19,7 +19,6 @@ import httplib
 import logging
 import libxml2
 import os
-import pickle # remove
 import pymarc
 import re
 import requests
@@ -32,17 +31,6 @@ import time
 import urllib
 from datetime import date, datetime, timedelta
 from lxml import etree
-
-# TODO
-# account for variation in output (timing?)
-# account for suppressed recs (exception in getbibdata)
-# better logging--count of records checked, count of fields checked, uris vs not
-# separate script which queries vger against cache of bibs already checked
-#X test for existing id.loc $0
-#X cache for id.loc
-#X ping id.loc when not found in (old) downloaded files
-#X remove OWI (defunct)
-#X add delete -N and make -C for 'report plus MARC')
 
 # config
 config = ConfigParser.RawConfigParser()
@@ -64,18 +52,6 @@ logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S
 logging.getLogger("requests").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-class HeadingNotFoundException(Exception):
-	def __init__(self, msg, heading, type, instead=None):
-		super(HeadingNotFoundException, self).__init__(msg)
-		"""
-		@param msg: Message for logging
-		@param heading: The heading we were searching when this was raised
-		@param type: The type of heading (personal or corporate) 
-		@param instead: The "Use instead" URI and string when heading is deprecated
-		"""
-		self.heading = heading
-		self.type = type
-		self.instead = instead
 
 def main():
 	'''
@@ -91,7 +67,7 @@ def main():
 		if not mrcrecs:
 			sys.exit('-'*75+'\nThere are no MARC records in the IN directory. Add some and try again.\n'+'-'*75)
 		else:
-			for mrcrec in mrcrecs: # TODO get count for log
+			for mrcrec in mrcrecs:
 				if verbose:
 					print(mrcrec)
 				readmrx(mrcrec,names,subjects)
@@ -199,7 +175,7 @@ def getbibdata():
 	else:
 		picklist = justfetch
 	
-	with open(picklist,'rb') as csvfile: # TODO get count for log
+	with open(picklist,'rb') as csvfile:
 			reader = csv.reader(csvfile,delimiter=',', quotechar='"')
 			firstline = reader.next() # skip header row
 			
@@ -250,8 +226,8 @@ def query_4s(label, scheme):
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-	#label = urllib.quote_plus(label) # this doesn't work
-	label = label.replace('"',"%20") # TODO: check this. see bib 568 "Problemna...".
+	#label = urllib.quote_plus(label) # this doesn't work, keeping as reminder
+	label = label.replace('"',"%20") # TODO: may want to recheck this. see bib 568 "Problemna...".
 	query = 'SELECT ?s WHERE { ?s ?p "%s"@en . }' % label
 	#print(query)
 	data = { 'query': query}
@@ -292,14 +268,20 @@ def readmrx(mrcrec,names,subjects):
 			if names:
 				r = check(bbid,rec,'nam')
 			if subjects:
-				r = check(bbid,rec,'sub')	
+				r = check(bbid,rec,'sub')
 			if nomarc == False:
 				out = "%s" % (pymarc.record_to_xml(r))
 				fh.write(out)
 		if nomarc == False:
 			fh.write("</collection>")
 			fh.close()
-	except:
+	except AttributeError as e:
+		return
+	except:	
+		if names:
+			scheme = 'nam'
+		elif subjects:
+			scheme = 'sub'
 		etype,evalue,etraceback = sys.exc_info()
 		flag = "readmrx problem: %s %s %s" % (etype,evalue,etraceback)
 		if csvout or nomarc: # idea is to report something out even when mrx has issues
@@ -312,8 +294,8 @@ def readmrx(mrcrec,names,subjects):
 		except:
 			etype,evalue,etraceback = sys.exc_info()
 			print("xmllint problem: %s" % evalue)
-				
-	if justfetch is None and keep == False:
+
+	if (justfetch is None and keep == False):
 		os.remove(INDIR+mrcrec)
 
 
@@ -352,18 +334,20 @@ def query_lc(subject, scheme):
 		if resp.status_code == 200:
 			uri = resp.headers["x-uri"]
 			if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
-				try: 
-					label = resp.headers["x-preflabel"]
-				except: # x-preflabel is not returned for deprecated headings
+				try:
+					resp.headers["x-preflabel"]
+				except KeyError as e: # x-preflabel is not returned for deprecated headings, so just check for it as a test
 					uri = "None (deprecated)"
-					tree = html.fromstring(resp.text)
-					see = tree.xpath("//h3/text()= 'Use Instead'") # this info isn't in the header, so grabbing from html
-					seeother = ''
-					if see:
-						other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
-						seeother = (other.attrib['href'], other.text)
-					raise HeadingNotFoundException(msg, subject, 'subject',seeother) # put the see other url and value into the db
-				
+					try:
+						tree = etree.html.fromstring(resp.text)
+						see = tree.xpath("//h3/text()= 'Use Instead'") # this info isn't in the header, so grabbing from html
+						seeother = ''
+						if not see:
+							other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
+							uri = (other.attrib['href'], other.text)
+					except:
+						pass
+					
 				with con:
 					cur = con.cursor() 
 					if cached == True:
@@ -376,7 +360,7 @@ def query_lc(subject, scheme):
 				if con:
 					con.close()
 				return uri, src # ==>
-			
+
 		elif resp.status_code == 404:
 			msg = "None (404)"
 			return msg,src
@@ -386,6 +370,7 @@ def query_lc(subject, scheme):
 
 
 def check(bbid,rec,scheme):
+	enhanced = False
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
 		fields = ['600','610','611','630','650','651']
@@ -395,6 +380,8 @@ def check(bbid,rec,scheme):
 		# get names data from these subfields
 		fields = ['100','110','130','700','710','730']
 		subfields = ['a','b','c','d','q']
+	if not rec.get_fields(*fields):
+		write_csv(bbid,'','',scheme,'','') # report out records with no headings
 	for f in rec.get_fields(*fields):
 		mrx_subs = []
 		h1 = ''
@@ -422,7 +409,7 @@ def check(bbid,rec,scheme):
 		if nomarc == False and uri is not None and uri.startswith('http'):
 			# check for existing id.loc $0 and compare if present
 			existing_sub0 = f.get_subfields('0')
-			if existing_sub0 is not None:
+			if existing_sub0:
 				if existing_sub0 != uri:
 					if 'id.loc.gov/' + scheme in existing_sub0:
 						src = 'already has %s' % existing_sub0
@@ -430,9 +417,10 @@ def check(bbid,rec,scheme):
 						#pymarc.Field.add_subfield(f,"0",uri)
 					else:
 						pymarc.Field.add_subfield(f,"0",uri)
+						enhanced = True
 			else:
 				pymarc.Field.add_subfield(f,"0",uri)
-			# TODO: get count for log
+				enhanced = True
 			
 		if (h2 != '' and uri.startswith('http') == True):
 			heading = h2
@@ -447,7 +435,11 @@ def check(bbid,rec,scheme):
 			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
 			write_csv(bbid, heading, uri, scheme,f.tag,src)
-	return rec
+		
+	if enhanced == False:
+		return
+	else:
+		return rec
 
 
 def write_csv(bbid, heading, uri, scheme, tag, src):
