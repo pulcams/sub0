@@ -57,6 +57,21 @@ def main():
 	'''
 	Main
 	'''
+	try:
+		s = requests.get('http://localhost:8000/status')
+		n = requests.get('http://localhost:8001/status')
+		i = requests.head('http://id.loc.gov')
+		if s.status_code == 200:
+			msg = 'lcsaf connection ok'
+		if n.status_code == 200:
+			msg += '\nlcnaf connection ok'
+		if i.status_code == 200:
+			msg += '\ninternet connection ok'
+		if verbose:
+			print(msg + '\nHere we go...')
+	except:
+		sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you and have a nice day.')
+
 	logging.info('main')
 	
 	if fetchngo is not None: # if fetching from bibdata.princeton.edu...
@@ -330,7 +345,7 @@ def query_lc(subject, scheme):
 		to_get = ID_SUBJECT_RESOLVER + subject
 		headers = {"Accept":"application/xml"}
 		time.sleep(1)
-		resp = requests.get(to_get, headers=headers, allow_redirects=True)
+		resp = requests.head(to_get, headers=headers, allow_redirects=True)
 		if resp.status_code == 200:
 			uri = resp.headers["x-uri"]
 			if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
@@ -360,7 +375,6 @@ def query_lc(subject, scheme):
 				if con:
 					con.close()
 				return uri, src # ==>
-
 		elif resp.status_code == 404:
 			msg = "None (404)"
 			return msg,src
@@ -401,11 +415,17 @@ def check(bbid,rec,scheme):
 			uri = query_4s(h1,scheme)
 			src = '4store'
 		if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
-			uri,src = query_lc(h,scheme)
+			try:
+				uri,src = query_lc(h,scheme)
+			except:
+				pass # as when uri has 'classification
 			if not uri.startswith('http'): # <= if not found, try without trailing punct.
 				h2 = h.rstrip('.').rstrip(',')
 				h2 = re.sub('(^\[|\]$)','',h2)
-				uri,src = query_lc(h2,scheme)
+				try:
+					uri,src = query_lc(h2,scheme)
+				except:
+					pass # as when uri has 'classification
 		if nomarc == False and uri is not None and uri.startswith('http'):
 			# check for existing id.loc $0 and compare if present
 			existing_sub0 = f.get_subfields('0')
