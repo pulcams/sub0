@@ -80,7 +80,7 @@ def main():
 		mrcrecs = os.walk(INDIR).next()[2]
 		mrcrecs.sort(key=alphanum_key)
 		if not mrcrecs:
-			sys.exit('-'*75+'\nThere are no MARC records in the IN directory. Add some and try again.\n'+'-'*75)
+			sys.exit('-'*75+'\nThere are no MARC records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
 		else:
 			for mrcrec in mrcrecs:
 				if verbose:
@@ -241,7 +241,7 @@ def query_4s(label, scheme):
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-	#label = urllib.quote_plus(label) # this doesn't work, keeping as reminder
+	##label = urllib.quote_plus(label) # this doesn't work, keeping as reminder
 	label = label.replace('"',"%20") # TODO: may want to recheck this. see bib 568 "Problemna...".
 	query = 'SELECT ?s WHERE { ?s ?p "%s"@en . }' % label
 	#print(query)
@@ -254,7 +254,7 @@ def query_4s(label, scheme):
 
 	doc = etree.fromstring(r.text)
 
-	for triple in doc.xpath("//sparql:binding[@name='s']/sparql:uri",namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+	for triple in doc.xpath("//sparql:binding[@name='s']/sparql:uri[not(contains(.,'childrens'))]",namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
 		return triple.text
 
 
@@ -321,26 +321,28 @@ def query_lc(subject, scheme):
 	# First, check the cache
 	src = 'id.loc.gov'
 	cached = False
-	con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
-	with con:
-		con.row_factory = lite.Row
-		cur = con.cursor()
-		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
-		rows = cur.fetchall()
-		if len(rows) != 0:
-			cached = True
-			for row in rows:
-				uri = row['uri']
-				dbscheme = row['scheme']
-				date = row['date']
-	if cached == True and date is not None:
-		date2 = datetime.strptime(todaydb,'%Y-%m-%d')
-		date1 = datetime.strptime(str(date),'%Y%m%d')
-		datediff = abs((date2 - date1).days)
-	if (cached == True and datediff <= maxage):
-		src += ' (cache)'
-		return uri,src
-	elif (cached == True and datediff > maxage) or cached == False:
+	datediff = 0
+	if ignore_cache == False:
+		con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
+		with con:
+			con.row_factory = lite.Row
+			cur = con.cursor()
+			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
+			rows = cur.fetchall()
+			if len(rows) != 0:
+				cached = True
+				for row in rows:
+					uri = row['uri']
+					dbscheme = row['scheme']
+					date = row['date']
+		if cached == True and date is not None:
+			date2 = datetime.strptime(todaydb,'%Y-%m-%d')
+			date1 = datetime.strptime(str(date),'%Y%m%d')
+			datediff = abs((date2 - date1).days)
+		if (cached == True and datediff <= maxage):
+			src += ' (cache)'
+			return uri,src
+	if (cached == True and datediff > maxage) or cached == False: # if ignore_cache == True, cached will be false
 		# ping id.loc only if not found in cache, or if checked long, long ago
 		to_get = ID_SUBJECT_RESOLVER + subject
 		headers = {"Accept":"application/xml"}
@@ -363,24 +365,37 @@ def query_lc(subject, scheme):
 					except:
 						pass
 					
-				with con:
-					cur = con.cursor() 
-					if cached == True:
-						updateurl = (today, subject.decode('utf8'), uri)
-						cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
-						src+=' (cache)'
-					else:
-						newuri = (subject.decode('utf8'), scheme, uri, today)
-						cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
-				if con:
-					con.close()
+				cache_it(uri,cached,subject)
+				
 				return uri, src # ==>
+			else:
+				if (scheme == 'nam' and 'authorities/subjects' in uri):
+					msg = 'None (wrong schema: %s)' % uri[18:]
+				elif (scheme == 'sub' and 'authorities/names' in uri):
+					msg = 'None (wrong schema: %s)' % uri[18:]
+				return msg,src
 		elif resp.status_code == 404:
 			msg = "None (404)"
+			cache_it(msg,cached,subject)
 			return msg,src
 		else: # resp.status_code != 404 and status != 200:
 			msg = "None (" + resp.status_code + ")"
+			cache_it(msg,cached,subject)
 			return msg,src
+
+def cache_it(uri,cached,subject):
+	con = lite.connect(DB)
+	with con:
+		cur = con.cursor() 
+		if cached == True:
+			updateurl = (today, subject.decode('utf8'), uri)
+			cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
+			src+=' (cache)'
+		else:
+			newuri = (subject.decode('utf8'), scheme, uri, today)
+			cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
+	if con:
+		con.close()
 
 
 def check(bbid,rec,scheme):
@@ -403,7 +418,13 @@ def check(bbid,rec,scheme):
 		src = '4store'
 		for s in f.get_subfields(*subfields):
 			s = s.encode('utf8').strip()
+			# TODO: account for fuller list of abbreviations
+			re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
+			re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
+			re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
 			mrx_subs.append(s)
+		if not mrx_subs:
+			continue # continue with next iteration of loop (e.g. prevent empty heading when 730 only has $t)
 		h = "--".join(mrx_subs)
 		h = h.replace(',--',', ')
 		h = h.replace('--(',' (') # $q
@@ -418,7 +439,7 @@ def check(bbid,rec,scheme):
 			try:
 				uri,src = query_lc(h,scheme)
 			except:
-				pass # as when uri has 'classification
+				pass # as when uri has 'classification'
 			if not uri.startswith('http'): # <= if not found, try without trailing punct.
 				h2 = h.rstrip('.').rstrip(',')
 				h2 = re.sub('(^\[|\]$)','',h2)
@@ -430,14 +451,17 @@ def check(bbid,rec,scheme):
 			# check for existing id.loc $0 and compare if present
 			existing_sub0 = f.get_subfields('0')
 			if existing_sub0:
-				if existing_sub0 != uri:
-					if 'id.loc.gov/' + scheme in existing_sub0:
-						src = 'already has %s' % existing_sub0
-						#pymarc.Field.delete_subfield(f,"0") # <= if the url is id.loc.gov and is different
-						#pymarc.Field.add_subfield(f,"0",uri)
-					else:
-						pymarc.Field.add_subfield(f,"0",uri)
-						enhanced = True
+				existing_sub0 = existing_sub0[0].encode('utf8').strip()
+				if existing_sub0 == uri:
+					src = 'already has %s' % existing_sub0
+				elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
+					pymarc.Field.delete_subfield(f,"0") # <=  ...assume it's been updated and delete it...
+					pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one. TODO: revisit this
+					enhanced = True
+					src = 'REPLACED %s with %s' % (existing_sub0,uri)
+				else:
+					pymarc.Field.add_subfield(f,"0",uri)
+					enhanced = True
 			else:
 				pymarc.Field.add_subfield(f,"0",uri)
 				enhanced = True
@@ -482,8 +506,9 @@ if __name__ == "__main__":
 	parser.add_argument("-f", "--fetch", type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
 	parser.add_argument("-F", "--Fetch", type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
 	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
-	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check WorldCat",required=False, default=30)
+	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check id.loc.gov",required=False, default=30)
 	parser.add_argument('-i','--ignore',dest="noidloc",required=False, default=False, action="store_true",help="Ignore id.loc.gov")
+	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore the cache.")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
@@ -496,6 +521,7 @@ if __name__ == "__main__":
 	keep = args['keep']
 	maxage = int(args['maxage'])
 	noidloc = args['noidloc']
+	ignore_cache = args['ignore_cache']
 	fname = ''
 	
 	if justfetch or fetchngo:
