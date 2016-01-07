@@ -221,7 +221,7 @@ def getbibdata():
 					#time.sleep(1)
 					if justfetch is None:
 						readmrx(bibid+'.mrx',names,subjects)
-				except: #TODO pass? (As when record has been suppressed after initial report was run, in which case, no xml)
+				except: # As when record has been suppressed after initial report was run, in which case, no xml
 					etype,evalue,etraceback = sys.exc_info()
 					flag = "problem: %s %s %s" % (etype,evalue,etraceback)
 					f2.write("%s %s\n" % (bibid, flag))
@@ -232,7 +232,7 @@ def getbibdata():
 					print("(%s) Got %s %s" % (count, bibid, flag))
 
 
-def query_4s(label, scheme):
+def query_4s(label, scheme, childrens):
 	'''
 	SPARQL query
 	'''
@@ -242,19 +242,30 @@ def query_4s(label, scheme):
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
 	##label = urllib.quote_plus(label) # this doesn't work, keeping as reminder
-	label = label.replace('"',"%20") # TODO: may want to recheck this. see bib 568 "Problemna...".
-	query = 'SELECT ?s WHERE { ?s ?p "%s"@en . }' % label
-	#print(query)
+	label = label.replace('"',"%22") # see bib 568 "Problemna..." (heading with double quotes).
+	# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
+	query = 'SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}' % label
+	
 	data = { 'query': query}
 	headers={ 'content-type':'application/x-www-form-urlencoded'}
 	
 	r = requests.post(host + "sparql/", data=data, headers=headers )
-	if r.status_code != requests.codes.ok:   # <= something went wrong
-		print(label, r.text)
+	if r.status_code != requests.codes.ok:   # <= something went wrong with 4store
+		msg = '%s, %s' % (label, r.text)
+		sys.exit(msg)
+	try:
+		doc = etree.fromstring(r.text)
+	except:
+		return None
 
-	doc = etree.fromstring(r.text)
+	xpth = "//sparql:binding[@name='s'][not(following-sibling::sparql:binding[@name='note'])]/sparql:uri"
+	
+	if childrens == 1:
+		xpth += "[contains(.,'childrensSubjects')]"
+	else: 
+		xpth += "[not(contains(.,'childrensSubjects'))]"
 
-	for triple in doc.xpath("//sparql:binding[@name='s']/sparql:uri[not(contains(.,'childrens'))]",namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+	for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
 		return triple.text
 
 
@@ -299,7 +310,7 @@ def readmrx(mrcrec,names,subjects):
 			scheme = 'sub'
 		etype,evalue,etraceback = sys.exc_info()
 		flag = "readmrx problem: %s %s %s" % (etype,evalue,etraceback)
-		if csvout or nomarc: # idea is to report something out even when mrx has issues
+		if csvout or nomarc: # idea here is to report something out even when mrx has issues
 			write_csv(bbid,flag,'',scheme, '','')
 		print(flag)
 
@@ -322,19 +333,18 @@ def query_lc(subject, scheme):
 	src = 'id.loc.gov'
 	cached = False
 	datediff = 0
-	if ignore_cache == False:
-		con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
-		with con:
-			con.row_factory = lite.Row
-			cur = con.cursor()
-			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
-			rows = cur.fetchall()
-			if len(rows) != 0:
-				cached = True
-				for row in rows:
-					uri = row['uri']
-					dbscheme = row['scheme']
-					date = row['date']
+	con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
+	with con:
+		con.row_factory = lite.Row
+		cur = con.cursor()
+		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
+		rows = cur.fetchall()
+		if len(rows) != 0:
+			cached = True
+			for row in rows:
+				uri = row['uri']
+				dbscheme = row['scheme']
+				date = row['date']
 		if cached == True and date is not None:
 			date2 = datetime.strptime(todaydb,'%Y-%m-%d')
 			date1 = datetime.strptime(str(date),'%Y%m%d')
@@ -342,7 +352,7 @@ def query_lc(subject, scheme):
 		if (cached == True and datediff <= maxage):
 			src += ' (cache)'
 			return uri,src
-	if (cached == True and datediff > maxage) or cached == False: # if ignore_cache == True, cached will be false
+	if (cached == True and datediff > maxage) or cached == False or (ignore_cache == True and uri == 'None (404)'):
 		# ping id.loc only if not found in cache, or if checked long, long ago
 		to_get = ID_SUBJECT_RESOLVER + subject
 		headers = {"Accept":"application/xml"}
@@ -365,9 +375,9 @@ def query_lc(subject, scheme):
 					except:
 						pass
 					
-				cache_it(uri,cached,subject)
+				cache_it(uri,cached,subject,scheme)
 				
-				return uri, src # ==>
+				return uri,src # ==>
 			else:
 				if (scheme == 'nam' and 'authorities/subjects' in uri):
 					msg = 'None (wrong schema: %s)' % uri[18:]
@@ -376,15 +386,16 @@ def query_lc(subject, scheme):
 				return msg,src
 		elif resp.status_code == 404:
 			msg = "None (404)"
-			cache_it(msg,cached,subject)
+			cache_it(msg,cached,subject,scheme)
 			return msg,src
 		else: # resp.status_code != 404 and status != 200:
 			msg = "None (" + resp.status_code + ")"
-			cache_it(msg,cached,subject)
+			cache_it(msg,cached,subject,scheme)
 			return msg,src
 
-def cache_it(uri,cached,subject):
+def cache_it(uri,cached,subject, scheme):
 	con = lite.connect(DB)
+	
 	with con:
 		cur = con.cursor() 
 		if cached == True:
@@ -416,6 +427,9 @@ def check(bbid,rec,scheme):
 		h1 = ''
 		h2 = ''
 		src = '4store'
+		childrens = 0
+		if scheme == 'sub':
+			childrens = int(f.indicators[1]) # second indicator '1' is LC subject headings for children's literature
 		for s in f.get_subfields(*subfields):
 			s = s.encode('utf8').strip()
 			# TODO: account for fuller list of abbreviations
@@ -428,25 +442,25 @@ def check(bbid,rec,scheme):
 		h = "--".join(mrx_subs)
 		h = h.replace(',--',', ')
 		h = h.replace('--(',' (') # $q
-		uri = query_4s(h,scheme)
+		uri = query_4s(h,scheme, childrens)
 		src = '4store'
 		if uri is None:
 			h1 = h.rstrip('.').rstrip(',')
 			h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
-			uri = query_4s(h1,scheme)
+			uri = query_4s(h1,scheme, childrens)
 			src = '4store'
-		if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
-			try:
-				uri,src = query_lc(h,scheme)
-			except:
-				pass # as when uri has 'classification'
-			if not uri.startswith('http'): # <= if not found, try without trailing punct.
-				h2 = h.rstrip('.').rstrip(',')
-				h2 = re.sub('(^\[|\]$)','',h2)
+			if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
 				try:
-					uri,src = query_lc(h2,scheme)
+					uri,src = query_lc(h,scheme)
 				except:
-					pass # as when uri has 'classification
+					pass # as when uri has 'classification'
+				if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
+					h2 = h.rstrip('.').rstrip(',')
+					h2 = re.sub('(^\[|\]$)','',h2)
+					try:
+						uri,src = query_lc(h2,scheme)
+					except:
+						pass # as when uri has 'classification'
 		if nomarc == False and uri is not None and uri.startswith('http'):
 			# check for existing id.loc $0 and compare if present
 			existing_sub0 = f.get_subfields('0')
@@ -454,24 +468,26 @@ def check(bbid,rec,scheme):
 				existing_sub0 = existing_sub0[0].encode('utf8').strip()
 				if existing_sub0 == uri:
 					src = 'already has %s' % existing_sub0
-				elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
-					pymarc.Field.delete_subfield(f,"0") # <=  ...assume it's been updated and delete it...
-					pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one. TODO: revisit this
 					enhanced = True
+				elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
+					pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
+					pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one.
 					src = 'REPLACED %s with %s' % (existing_sub0,uri)
+					enhanced = True
 				else:
 					pymarc.Field.add_subfield(f,"0",uri)
 					enhanced = True
 			else:
 				pymarc.Field.add_subfield(f,"0",uri)
 				enhanced = True
-			
-		if (h2 != '' and uri.startswith('http') == True):
+		if h2 != '' and uri is None:
+			heading = h
+		elif (h2 != '' and uri.startswith('http') == True):
 			heading = h2
 		elif (h1 != '' and uri.startswith('http') == True):
 			heading = h1
 		elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
-			heading = h[:-1] + '['+h[-1:]+']'
+			heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
 		else:
 			heading = h
 
@@ -479,7 +495,7 @@ def check(bbid,rec,scheme):
 			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
 			write_csv(bbid, heading, uri, scheme,f.tag,src)
-		
+	
 	if enhanced == False:
 		return
 	else:
@@ -508,7 +524,7 @@ if __name__ == "__main__":
 	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
 	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check id.loc.gov",required=False, default=30)
 	parser.add_argument('-i','--ignore',dest="noidloc",required=False, default=False, action="store_true",help="Ignore id.loc.gov")
-	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore the cache.")
+	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc again).")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
