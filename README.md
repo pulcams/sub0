@@ -4,7 +4,7 @@
 
 <b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
-The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory.
+The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory. (`vger.py` will grab the next n records from Voyager, keeping a cache in a sqlite db.)
 
 Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [4store](http://4store.org/). When a given heading isn't found, id.loc.gov can be queried directly to check whether it's been added since the download files were prepared.  
 ```
@@ -38,6 +38,8 @@ Enhanced MARCXML records will be in the `./out` dir.
 For 'help':
 
 `python uris.py -h`
+
+For reporting, `summaries.py` outputs totals to a TOTALS file as well as an html file.
 
 ### Dependencies
  * [4store](http://4store.org/)
