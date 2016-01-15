@@ -39,13 +39,15 @@ config.read('./config/uris.cfg')
 OUTDIR = config.get('env', 'outdir')
 INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
-REPORTS = config.get('env', 'reports')
+REPORTDIR = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
 DB = config.get('db','sqlite')
 ID_SUBJECT_RESOLVER = "http://id.loc.gov/authorities/label/"
 
 today = time.strftime('%Y%m%d') # name log files
 todaydb = time.strftime('%Y-%m-%d') # date to check against db
+
+REPORTS = REPORTDIR + today # reports go into subdirectories in w3cdtf
 
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',filename=LOG+today+'.log',level=logging.INFO)
 # the following two lines disable the default logging of requests.get()
@@ -75,7 +77,7 @@ def main():
 	logging.info('main')
 	
 	if fetchngo is not None: # if fetching from bibdata.princeton.edu...
-		getbibdata()
+		get_bibdata()
 	else: # if parsing files already in the IN dir
 		mrcrecs = os.walk(INDIR).next()[2]
 		mrcrecs.sort(key=alphanum_key)
@@ -85,10 +87,10 @@ def main():
 			for mrcrec in mrcrecs:
 				if verbose:
 					print(mrcrec)
-				readmrx(mrcrec,names,subjects)
+				read_mrx(mrcrec,names,subjects)
 
 
-def tryint(s):
+def try_int(s):
 	'''
 	Toward sorting filenames. Used in alphanum_key. Nicked from GH.
 	'''
@@ -102,7 +104,7 @@ def alphanum_key(s):
 	'''
 	For sorting filenames
 	'''
-	return [tryint(c) for c in re.split('([0-9]+)', s)]
+	return [try_int(c) for c in re.split('([0-9]+)', s)]
 
 
 def setup():
@@ -125,6 +127,9 @@ def setup():
 	
 	if not os.path.exists(LOG):
 		os.makedirs(LOG)
+
+	if not os.path.exists(REPORTS):
+		os.makedirs(REPORTS)
 	
 	schemelist = []
 	if (csvout or nomarc) and (subjects or names): #or owis):
@@ -133,9 +138,9 @@ def setup():
 		if names:
 			schemelist.append('nam')
 		for scheme in schemelist:
-			rpt = REPORTS+fname+'_'+scheme+'_'+today+'.csv'
+			rpt = REPORTS+'/'+fname+'_'+scheme+'_'+today+'.csv'
 			try:
-				os.rename(rpt, rpt + '.bak') # just back up output from previous runs on same day
+				os.rename(rpt, rpt + '.bak') # back up output from previous runs on same day
 			except OSError:
 				pass
 				
@@ -175,13 +180,13 @@ def cleanup():
 	logging.info('cleanup')
 
 
-def getbibdata():
+def get_bibdata():
 	'''
-	Query the PUL getbibdata service
+	Query the PUL bibdata service
 	'''
-	logging.info('getbibdata')
+	logging.info('get_bibdata')
 	
-	conn = httplib.HTTPConnection("bibdata.princeton.edu")
+	conn = httplib.HTTPSConnection("bibdata.princeton.edu")
 	flag = ""
 	NS = "{http://www.loc.gov/MARC21/slim}"
 		
@@ -204,7 +209,7 @@ def getbibdata():
 	
 				conn.request("GET", "/bibliographic/"+bibid)
 				got = conn.getresponse()
-				data = got.read()
+				data = got.read()		
 				conn.close() 
 				
 				f = open(INDIR+bibid+'.mrx', 'w')
@@ -220,7 +225,7 @@ def getbibdata():
 					f2.write("%s %s\n" % (bibid, flag))
 					#time.sleep(1)
 					if justfetch is None:
-						readmrx(bibid+'.mrx',names,subjects)
+						read_mrx(bibid+'.mrx',names,subjects)
 				except: # As when record has been suppressed after initial report was run, in which case, no xml
 					etype,evalue,etraceback = sys.exc_info()
 					flag = "problem: %s %s %s" % (etype,evalue,etraceback)
@@ -269,18 +274,16 @@ def query_4s(label, scheme, childrens):
 		return triple.text
 
 
-def readmrx(mrcrec,names,subjects):
+def read_mrx(mrcrec,names,subjects):
 	'''
 	Read through a given MARCXML file and copy, inserting $0 as appropriate
 	'''
+	enhanced = [] # will be True or False, from check_heading()
+	recs = [] # will be a pymarc object or None, from check_heading()
 	mrxheader = """<?xml version="1.0" encoding="UTF-8" ?>
 	<collection xmlns="http://www.loc.gov/MARC21/slim" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.loc.gov/MARC21/slim http://www.loc.gov/standards/marcxml/schema/MARC21slim.xsd">"""
 	try:
 		reader = pymarc.marcxml.parse_xml_to_array(INDIR+mrcrec)
-		if nomarc == False:
-			outfile = str.replace(mrcrec,'.xml','')
-			fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+')
-			fh.write(mrxheader)
 		
 		for rec in reader:
 			f001 = rec.get_fields('001')
@@ -292,13 +295,26 @@ def readmrx(mrcrec,names,subjects):
 			for b in f001:
 				bbid = b.value()
 			if names:
-				r = check(bbid,rec,'nam')
+				en,r = check_heading(bbid,rec,'nam')
+				enhanced.append(en)
+				recs.append(r)
 			if subjects:
-				r = check(bbid,rec,'sub')
-			if nomarc == False:
-				out = "%s" % (pymarc.record_to_xml(r))
-				fh.write(out)
-		if nomarc == False:
+				en,r = check_heading(bbid,rec,'sub')
+				enhanced.append(en)
+				recs.append(r)
+			if nomarc == False and True in enhanced:
+				for record in recs:
+					if record is not None:
+						outfile = str.replace(mrcrec,'.xml','')
+						fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+')
+						fh.write(mrxheader)
+						try:
+							out = "%s" % (pymarc.record_to_xml(record))
+							fh.write(out)
+						except Exception as e:
+							raise					
+				
+		if nomarc == False and True in enhanced:
 			fh.write("</collection>")
 			fh.close()
 	except AttributeError as e:
@@ -309,12 +325,12 @@ def readmrx(mrcrec,names,subjects):
 		elif subjects:
 			scheme = 'sub'
 		etype,evalue,etraceback = sys.exc_info()
-		flag = "readmrx problem: %s %s %s" % (etype,evalue,etraceback)
+		flag = "read_mrx problem: %s %s %s" % (etype,evalue,etraceback)
 		if csvout or nomarc: # idea here is to report something out even when mrx has issues
 			write_csv(bbid,flag,'',scheme, '','')
 		print(flag)
 
-	if not nomarc:
+	if not nomarc and True in enhanced:
 		try:
 			subprocess.Popen(['xmllint','--format','-o', OUTDIR+outfile, TMPDIR+outfile+'_tmp.xml']).wait()
 		except:
@@ -393,6 +409,7 @@ def query_lc(subject, scheme):
 			cache_it(msg,cached,subject,scheme)
 			return msg,src
 
+
 def cache_it(uri,cached,subject, scheme):
 	con = lite.connect(DB)
 	
@@ -409,7 +426,7 @@ def cache_it(uri,cached,subject, scheme):
 		con.close()
 
 
-def check(bbid,rec,scheme):
+def check_heading(bbid,rec,scheme):
 	enhanced = False
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
@@ -432,7 +449,8 @@ def check(bbid,rec,scheme):
 			childrens = int(f.indicators[1]) # second indicator '1' is LC subject headings for children's literature
 		for s in f.get_subfields(*subfields):
 			s = s.encode('utf8').strip()
-			# TODO: account for fuller list of abbreviations
+			# Account for abbreviations (using negative lookbehind)
+			# TODO: account for fuller list
 			re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
 			re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
 			re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
@@ -495,18 +513,18 @@ def check(bbid,rec,scheme):
 			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
 			write_csv(bbid, heading, uri, scheme,f.tag,src)
-	
-	if enhanced == False:
-		return
-	else:
-		return rec
 
+	if enhanced == False:
+		return enhanced, None
+	else:
+		return enhanced, rec
+		
 
 def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
 	Write out csv reports
 	'''
-	with open(REPORTS+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
+	with open(REPORTS+'/'+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
 		row = (bbid, heading, uri, tag, src)
 		writer.writerow(row)
@@ -549,7 +567,7 @@ if __name__ == "__main__":
 	logging.info('='*50)
 	setup()
 	if justfetch is not None:
-		getbibdata()
+		get_bibdata()
 	else:
 		main()
 	cleanup()
