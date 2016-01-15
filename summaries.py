@@ -136,7 +136,7 @@ def make_html():
 <script src="http://www.d3plus.org/js/d3.js"></script>
 <script src="http://www.d3plus.org/js/d3plus.js"></script>
 <div class="container" id="top">
-<h1>$0 loads</h1>
+<h1>subfield 0</h1>
 <table class="table-condensed table-bordered">
 <tr><th>run</th><th>scheme</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>records_enhanced</th><th>headings_total<!--<a href="#headings">?</a>--></th><th>headings_found</th><th>headings_not_found</th><th>total_enhanced</th><th>vger_db</th></tr>"""
 
