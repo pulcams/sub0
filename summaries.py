@@ -137,6 +137,12 @@ def make_html():
 	div {
 	font-family:Consolas,monaco,monospace;
 	}
+	pre {
+	background-color:#fff;
+	}
+	.note {
+	color:red;
+	}
 </style>
 <script src="http://www.d3plus.org/js/d3.js"></script>
 <script src="http://www.d3plus.org/js/d3plus.js"></script>
@@ -163,6 +169,25 @@ def make_html():
 		<dt>subfields</dt>
 		<dd>a,b,c,d,f,g,h,j,k,l,m,n,o,p,q,r,s,t,u,v,x,y,z,4</dd>
 	</dl>
+		<hr />
+		<a href="#top">top</a>
+	<h4>report structure</h4>
+<p>click on a link in the 'run' column</p>
+<pre>
+reports/
+└── 20160113 <span class='note'># <= id of run</span>
+    ├── _nam_20160113.csv <span class='note'># <= full list of headings and responses</span>
+    ├── _nam_20160113_enhanced.csv  <span class='note'># <= list of bibs that were enhanced</span>
+    ├── _nam_20160113_nonenhanced.csv  <span class='note'># <= list of bibs that were *not* enhanced</span>
+    ├── reloader <span class='note'># <= files from Strawn's Record Reloader</span>
+    │   ├── combined_to_load.mrc
+    │   ├── RECORD.REPLACE.20160114.114024.RecordsModified.txt
+    │   ├── RECORD.REPLACE.20160114.114543.MarcArchive.mrc
+    │   └── RECORD.REPLACE.20160114.114543.Report.txt
+    ├── _sub_20160113.csv
+    ├── _sub_20160113_enhanced.csv
+    └── _sub_20160113_nonenhanced.csv
+</pre>
 </div>
 </div>
 </html>
