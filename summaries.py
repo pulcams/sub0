@@ -133,10 +133,15 @@ def make_html():
 <meta charset="utf-8">
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+<style>
+	div {
+	font-family:Consolas,monaco,monospace;
+	}
+</style>
 <script src="http://www.d3plus.org/js/d3.js"></script>
 <script src="http://www.d3plus.org/js/d3plus.js"></script>
 <div class="container" id="top">
-<h1>subfield 0</h1>
+<h1>$0 loads</h1>
 <table class="table-condensed table-bordered">
 <tr><th>run</th><th>scheme</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>records_enhanced</th><th>headings_total<!--<a href="#headings">?</a>--></th><th>headings_found</th><th>headings_not_found</th><th>total_enhanced</th><th>vger_db</th></tr>"""
 
