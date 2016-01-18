@@ -35,7 +35,6 @@ from lxml import etree
 # config
 config = ConfigParser.RawConfigParser()
 config.read('./config/uris.cfg')
-#config.read('./config/uris_aws.cfg') # <= aws ec2 instance
 OUTDIR = config.get('env', 'outdir')
 INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
@@ -92,7 +91,7 @@ def main():
 
 def try_int(s):
 	'''
-	Toward sorting filenames. Used in alphanum_key. Nicked from GH.
+	Helper toward sorting filenames in main(). Used in alphanum_key. Nicked from GH.
 	'''
 	try:
 		return int(s)
@@ -102,14 +101,14 @@ def try_int(s):
 
 def alphanum_key(s):
 	'''
-	For sorting filenames
+	For sorting filenames in main()
 	'''
 	return [try_int(c) for c in re.split('([0-9]+)', s)]
 
 
 def setup():
 	'''
-	Create tmp and in dirs, and csv file
+	Create tmp, in, out, reports, log dirs and csv files
 	'''
 	logging.info('setup')
 
@@ -276,7 +275,7 @@ def query_4s(label, scheme, childrens):
 
 def read_mrx(mrcrec,names,subjects):
 	'''
-	Read through a given MARCXML file and copy, inserting $0 as appropriate
+	Read through a given MARCXML file and optionally copy it, inserting $0 as appropriate
 	'''
 	enhanced = [] # will be True or False, from check_heading()
 	recs = [] # will be a pymarc object or None, from check_heading()
@@ -342,9 +341,9 @@ def read_mrx(mrcrec,names,subjects):
 
 
 def query_lc(subject, scheme):
-	"""
+	'''
 	Query id.loc.gov (but only after checking the local file)
-	"""
+	'''
 	# First, check the cache
 	src = 'id.loc.gov'
 	cached = False
@@ -365,11 +364,14 @@ def query_lc(subject, scheme):
 			date2 = datetime.strptime(todaydb,'%Y-%m-%d')
 			date1 = datetime.strptime(str(date),'%Y%m%d')
 			datediff = abs((date2 - date1).days)
-		if (cached == True and datediff <= maxage):
+		if (cached == True and datediff <= maxage): #and ignore_cache == False):
 			src += ' (cache)'
 			return uri,src
+			
 	if (cached == True and datediff > maxage) or cached == False or (ignore_cache == True and uri == 'None (404)'):
 		# ping id.loc only if not found in cache, or if checked long, long ago
+		subject = subject.replace('&','%26')
+		subject = subject.decode('utf8')
 		to_get = ID_SUBJECT_RESOLVER + subject
 		headers = {"Accept":"application/xml"}
 		time.sleep(1)
@@ -390,10 +392,11 @@ def query_lc(subject, scheme):
 							uri = (other.attrib['href'], other.text)
 					except:
 						pass
-					
+						
 				cache_it(uri,cached,subject,scheme)
 				
 				return uri,src # ==>
+				
 			else:
 				if (scheme == 'nam' and 'authorities/subjects' in uri):
 					msg = 'None (wrong schema: %s)' % uri[18:]
@@ -411,22 +414,33 @@ def query_lc(subject, scheme):
 
 
 def cache_it(uri,cached,subject, scheme):
+	'''
+	Put uris from id.loc.gov into cache (or update the date checked)
+	'''
 	con = lite.connect(DB)
-	
-	with con:
-		cur = con.cursor() 
-		if cached == True:
-			updateurl = (today, subject.decode('utf8'), uri)
-			cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
-			src+=' (cache)'
-		else:
-			newuri = (subject.decode('utf8'), scheme, uri, today)
-			cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
+	print('[cache_it] %s %s %s %s' % (uri,cached,subject, scheme))
+	try:
+		with con:
+			cur = con.cursor() 
+			if cached == True:
+				updateurl = (today, subject, uri)
+				cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
+			else:
+				newuri = (subject, scheme, uri, today)
+				cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
+	except Exception as e:
+		print('cache_it error %s' % e.value)
+		pass
+		
 	if con:
 		con.close()
 
 
+
 def check_heading(bbid,rec,scheme):
+	'''
+	Check a given heading against 4store and, if that fails, id.loc.gov
+	'''
 	enhanced = False
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
@@ -449,8 +463,8 @@ def check_heading(bbid,rec,scheme):
 			childrens = int(f.indicators[1]) # second indicator '1' is LC subject headings for children's literature
 		for s in f.get_subfields(*subfields):
 			s = s.encode('utf8').strip()
+			# TODO: a fuller list could be put into a sqlite db to be checked here
 			# Account for abbreviations (using negative lookbehind)
-			# TODO: account for fuller list
 			re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
 			re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
 			re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
@@ -459,6 +473,7 @@ def check_heading(bbid,rec,scheme):
 			continue # continue with next iteration of loop (e.g. prevent empty heading when 730 only has $t)
 		h = "--".join(mrx_subs)
 		h = h.replace(',--',', ')
+		h = h.replace('.--','. ')
 		h = h.replace('--(',' (') # $q
 		uri = query_4s(h,scheme, childrens)
 		src = '4store'
@@ -467,10 +482,11 @@ def check_heading(bbid,rec,scheme):
 			h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
 			uri = query_4s(h1,scheme, childrens)
 			src = '4store'
-			if uri is None and not noidloc: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
+			if uri is None and noidloc == False: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
 				try:
 					uri,src = query_lc(h,scheme)
 				except:
+					#src = 'id.loc'
 					pass # as when uri has 'classification'
 				if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
 					h2 = h.rstrip('.').rstrip(',')
@@ -478,6 +494,7 @@ def check_heading(bbid,rec,scheme):
 					try:
 						uri,src = query_lc(h2,scheme)
 					except:
+						#src = 'id.loc'
 						pass # as when uri has 'classification'
 		if nomarc == False and uri is not None and uri.startswith('http'):
 			# check for existing id.loc $0 and compare if present
@@ -508,7 +525,7 @@ def check_heading(bbid,rec,scheme):
 			heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
 		else:
 			heading = h
-
+	
 		if verbose:
 			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 		if csvout or nomarc:
@@ -522,7 +539,7 @@ def check_heading(bbid,rec,scheme):
 
 def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
-	Write out csv reports
+	Write out csv reports, one each for names ('_nam_') and subjects ('_sub_')
 	'''
 	with open(REPORTS+'/'+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
@@ -542,7 +559,7 @@ if __name__ == "__main__":
 	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
 	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check id.loc.gov",required=False, default=30)
 	parser.add_argument('-i','--ignore',dest="noidloc",required=False, default=False, action="store_true",help="Ignore id.loc.gov")
-	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc again).")
+	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc.gov again).")
 
 	args = vars(parser.parse_args())
 	verbose = args['verbose']
