@@ -506,13 +506,16 @@ def check_heading(bbid,rec,scheme):
 					enhanced = True
 				elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
 					pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
+					uri = '(uri) ' + uri
 					pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one.
 					src = 'REPLACED %s with %s' % (existing_sub0,uri)
 					enhanced = True
 				else:
+					uri = '(uri) ' + uri
 					pymarc.Field.add_subfield(f,"0",uri)
 					enhanced = True
 			else:
+				uri = '(uri) ' + uri
 				pymarc.Field.add_subfield(f,"0",uri)
 				enhanced = True
 		if h2 != '' and uri is None:
