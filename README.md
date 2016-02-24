@@ -2,7 +2,7 @@
 
 ### under construction (naturally)
 
-<i>This is for local experimentation at PUL. If you're searching around for something to enhance your MARC records, you might check out [MarcEdit](http://marcedit.reeset.net/)'s MarcNext tools.</i>
+<i>This is for local experimentation at PUL. If you're searching around for something to enhance your MARC records, you might check out [MarcEdit](http://marcedit.reeset.net/)'s MARCNext tools.</i>
 
 <b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
