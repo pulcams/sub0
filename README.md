@@ -2,6 +2,10 @@
 
 ### under construction (naturally)
 
+<i>This is for local experimentation at PUL. If you're searching around for something to enhance your MARC records, you might check out [MarcEdit](http://marcedit.reeset.net/)'s MarcNext tools.</i>
+
+This is for local use at PUL. If you're searching around for something to use for your library, check out [MarcEdit](http://marcedit.reeset.net/)'s Marc Next tools.
+
 <b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
 The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory. (`vger.py` will grab the next n records from Voyager, keeping a cache in a sqlite db.)
