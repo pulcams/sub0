@@ -67,6 +67,6 @@ For reporting, `summaries.py` outputs totals to a TOTALS file as well as an html
 ### Makes use of
  * [id.loc.gov](http://id.loc.gov/)
  * <strike>[OCLC xID service](https://www.oclc.org/developer/develop/web-services/xid-api.en.html) (production-level access)</strike>
- * local (Princeton) bibdata service (marc_liberation)
+ * [https://github.com/pulibrary/marc_liberation](marc_liberation) locally hosted bibdata service
  * [voyager_helpers](https://github.com/pulibrary/voyager_helpers)
  * [cmarcedit.exe](http://marcedit.reeset.net/cmarcedit-exe-using-the-command-line)
