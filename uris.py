@@ -4,10 +4,11 @@
 Linked data prep. Get URIs and (optionally) insert $0 into MARCXML records.
 Works with lcnaf and lcsaf in 4store.
 
-sudo ./start-4store.sh
-python uris.py -vnRk
+sudo ./sh/start-4store.sh
 
-python uris.py -h
+python uris.py -vsnrk
+
+python uris.py -h 
 
 from 20151023
 pmg
@@ -32,6 +33,9 @@ import urllib
 from datetime import date, datetime, timedelta
 from lxml import etree
 
+# TODO:
+# Flag for rec per file vs single file modes?
+
 # config
 config = ConfigParser.RawConfigParser()
 config.read('./config/uris.cfg')
@@ -40,8 +44,11 @@ INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
 REPORTDIR = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
-DB = config.get('db','sqlite')
-ID_SUBJECT_RESOLVER = "http://id.loc.gov/authorities/label/"
+TOLOAD = config.get('env', 'load')
+CMARCEDIT = config.get('env', 'cmarcedit')
+VOYAGER_HELPER = config.get('env','voyager_helper')
+DB = config.get('db','heading_cache')
+ID_HEADING_RESOLVER = "http://id.loc.gov/authorities/label/"
 
 today = time.strftime('%Y%m%d') # name log files
 todaydb = time.strftime('%Y-%m-%d') # date to check against db
@@ -63,20 +70,23 @@ def main():
 		n = requests.get('http://localhost:8001/status')
 		i = requests.head('http://id.loc.gov')
 		if s.status_code == 200:
-			msg = 'lcsaf connection ok'
+			msg = 'lcsaf connection ok\n'
 		if n.status_code == 200:
-			msg += '\nlcnaf connection ok'
+			msg += 'lcnaf connection ok\n'
 		if i.status_code == 200:
-			msg += '\ninternet connection ok'
+			msg += 'internet connection ok'
 		if verbose:
 			print(msg + '\nHere we go...')
 	except:
-		sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you and have a nice day.')
+		sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you, and have a nice day.')
 
 	logging.info('main')
 	
 	if fetchngo is not None: # if fetching from bibdata.princeton.edu...
-		get_bibdata()
+		if pyget:
+			get_bibdata_rb()
+		else:
+			get_bibdata()
 	else: # if parsing files already in the IN dir
 		mrcrecs = os.walk(INDIR).next()[2]
 		mrcrecs.sort(key=alphanum_key)
@@ -108,9 +118,9 @@ def alphanum_key(s):
 
 def setup():
 	'''
-	Create tmp, in, out, reports, log dirs and csv files
+	Create tmp, in, out, reports, load, log dirs, and csv files
 	'''
-	logging.info('setup')
+	logging.info('seting up')
 
 	if (not os.path.exists(TMPDIR)) and (justfetch is None):
 		os.makedirs(TMPDIR)
@@ -129,22 +139,25 @@ def setup():
 
 	if not os.path.exists(REPORTS):
 		os.makedirs(REPORTS)
+
+	if not os.path.exists(TOLOAD):
+		os.makedirs(TOLOAD)
 	
 	schemelist = []
-	if (csvout or nomarc) and (subjects or names): #or owis):
+	if (csvout or nomarc) and (subjects or names):
 		if subjects:
 			schemelist.append('sub')
 		if names:
 			schemelist.append('nam')
 		for scheme in schemelist:
-			rpt = REPORTS+'/'+fname+'_'+scheme+'_'+today+'.csv'
+			rpt = REPORTS+'/'+picklist+'_'+scheme+'_'+today+'.csv'
 			try:
 				os.rename(rpt, rpt + '.bak') # back up output from previous runs on same day
 			except OSError:
 				pass
 				
 			with open(rpt,'wb+') as outfile:
-				heading = ['bib','heading','uri','tag','source']
+				heading = ['bib','heading','lc_uri','lc_tag','lc_source']
 				writer = csv.writer(outfile)
 				writer.writerow(heading)
 
@@ -158,7 +171,7 @@ def cleanup():
 	outdir_count = str(len([name for name in os.listdir(OUTDIR) if os.path.isfile(os.path.join(OUTDIR, name))]))
 	
 	if justfetch is None and keep == False:
-		tempdirs = [TMPDIR]
+		tempdirs = [TMPDIR, INDIR]
 		for d in tempdirs:
 			if os.path.isdir(d):
 				shutil.rmtree(d)
@@ -172,18 +185,34 @@ def cleanup():
 		msg = outdir_count + ' enhanced records are in OUT dir.'
 		logging.info(msg)
 	if csvout:
-		msg = 'Reports are in reports dir.'
+		msg = 'reports are in reports dir.'
 		logging.info(msg)
 	print('See ya.')
 	
-	logging.info('cleanup')
+	logging.info('cleaned up')
 
+
+def get_bibdata_rb():
+	'''
+	Query the PUL bibdata service using voyager_helpers gem (maybe better for large batches)
+	'''
+	logging.info('getting bibdata using get_bibdata.rb')
+
+	try:
+		subprocess.Popen(['ruby',VOYAGER_HELPER,picklist]).wait()
+	except:
+		etype,evalue,etraceback = sys.exc_info()
+		print("get_bibdata_rb problem: %s" % evalue)
+
+	if justfetch is None: # single file mode
+		read_mrx(picklist+'.mrx',names,subjects) # single file mode
+	
 
 def get_bibdata():
 	'''
 	Query the PUL bibdata service
 	'''
-	logging.info('get_bibdata')
+	logging.info('getting bibdata')
 	
 	conn = httplib.HTTPSConnection("bibdata.princeton.edu")
 	flag = ""
@@ -195,48 +224,59 @@ def get_bibdata():
 		picklist = justfetch
 	
 	with open(picklist,'rb') as csvfile:
-			reader = csv.reader(csvfile,delimiter=',', quotechar='"')
-			firstline = reader.next() # skip header row
-			
-			count = 0
-			
-			for row in reader:
-				
-				count += 1 # just for verbose mode
-				
-				bibid = row[0]
+		reader = csv.reader(csvfile,delimiter=',', quotechar='"')
+
+		firstline = reader.next() # skip header row
+		
+		count = 0
+
+		f = open(INDIR+today+'.mrx', 'w+')
+		f.writelines("<collection>")
+		
+		for row in reader:
 	
-				conn.request("GET", "/bibliographic/"+bibid)
-				got = conn.getresponse()
-				data = got.read()		
-				conn.close() 
+			count += 1 # just for verbose mode
+			
+			bibid = row[0]
+
+			conn.request("GET", "/bibliographic/"+bibid)
+			got = conn.getresponse()
+			data = got.read()		
+			conn.close() 
+
+			f = open(INDIR+today+'.mrx', 'a') # single file mode
+			## f = open(INDIR+bibid+'.mrx', 'w') # mult files mode
+			f2 = open(LOG+'out.txt', 'a') # simple log
+						
+			try:
+				doc = etree.fromstring(data)
+				data = etree.tostring(doc,pretty_print=False,encoding='utf-8')
+				f001 = doc.find("marc:record/marc:controlfield[@tag=\'001\']",namespaces={'marc':'http://www.loc.gov/MARC21/slim'})
+				f.writelines(data)
+				#f.close() # mult files mode
+				flag = "ok"
+				f2.write("%s\n" % bibid)
+				#time.sleep(1)
+				#if justfetch is None: # mult files mode
+					#read_mrx(bibid+'.mrx',names,subjects) # mult files mode
+			except: # As when record has been suppressed after initial report was run, in which case, no xml
+				etype,evalue,etraceback = sys.exc_info()
+				flag = "problem: %s %s %s, line %s" % (etype,evalue,etraceback,etraceback.tb_lineno)
+				f2.write("%s %s\n" % (bibid, flag))
+
+			f2.close()
 				
-				f = open(INDIR+bibid+'.mrx', 'w')
-				f2 = open(LOG+'out.txt', 'a') # simple log
-							
-				try:
-					doc = etree.fromstring(data)
-					data = etree.tostring(doc,pretty_print=False,encoding='utf-8')
-					f001 = doc.find("marc:record/marc:controlfield[@tag=\'001\']",namespaces={'marc':'http://www.loc.gov/MARC21/slim'})
-					f.writelines(data)
-					f.close()
-					flag = "ok"
-					f2.write("%s %s\n" % (bibid, flag))
-					#time.sleep(1)
-					if justfetch is None:
-						read_mrx(bibid+'.mrx',names,subjects)
-				except: # As when record has been suppressed after initial report was run, in which case, no xml
-					etype,evalue,etraceback = sys.exc_info()
-					flag = "problem: %s %s %s" % (etype,evalue,etraceback)
-					f2.write("%s %s\n" % (bibid, flag))
+			if verbose:
+				print("(%s) Got %s" % (count, bibid))
+				
+		f.writelines("</collection>")
+		f.close() # single file mode
 
-				f2.close()
-					
-				if verbose:
-					print("(%s) Got %s %s" % (count, bibid, flag))
+		if justfetch is None: # single file mode
+			read_mrx(today+'.mrx',names,subjects) # single file mode
 
 
-def query_4s(label, scheme, childrens):
+def query_4s(label, scheme, thesaurus):
 	'''
 	SPARQL query
 	'''
@@ -264,7 +304,7 @@ def query_4s(label, scheme, childrens):
 
 	xpth = "//sparql:binding[@name='s'][not(following-sibling::sparql:binding[@name='note'])]/sparql:uri"
 	
-	if childrens == 1:
+	if thesaurus == 1:
 		xpth += "[contains(.,'childrensSubjects')]"
 	else: 
 		xpth += "[not(contains(.,'childrensSubjects'))]"
@@ -296,26 +336,31 @@ def read_mrx(mrcrec,names,subjects):
 			if names:
 				en,r = check_heading(bbid,rec,'nam')
 				enhanced.append(en)
-				recs.append(r)
-			if subjects:
+				if en == True:
+					recs.append(r)
+			if subjects: # if just searching subjects, or if a rec only has subjects, no names
 				en,r = check_heading(bbid,rec,'sub')
-				enhanced.append(en)
-				recs.append(r)
-			if nomarc == False and True in enhanced:
-				for record in recs:
-					if record is not None:
-						outfile = str.replace(mrcrec,'.xml','')
-						fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+')
-						fh.write(mrxheader)
-						try:
-							out = "%s" % (pymarc.record_to_xml(record))
-							fh.write(out)
-						except Exception as e:
-							raise					
-				
-		if nomarc == False and True in enhanced:
+				enhanced.append(en) 	
+				if en == True and r not in recs:
+					recs.append(r)
+		if nomarc == False: #and (True in enhanced):
+			outfile = str.replace(mrcrec,'.xml','') # single file mode
+			fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+') # single file mode
+			fh.write(mrxheader)
+			for record in recs:
+				if record is not None:
+					#outfile = str.replace(mrcrec,'.xml','') # mult files mode
+					#fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+') # mult files mod
+					#fh.write(mrxheader) # mult files mod
+					try:
+						out = "%s" % (pymarc.record_to_xml(record))
+						fh.write(out)
+					except Exception as e:
+						raise						
+		if nomarc == False and ((enhanced_only == True and (True in enhanced)) or (enhanced_only == False)):
 			fh.write("</collection>")
 			fh.close()
+			
 	except AttributeError as e:
 		return
 	except:	
@@ -324,23 +369,23 @@ def read_mrx(mrcrec,names,subjects):
 		elif subjects:
 			scheme = 'sub'
 		etype,evalue,etraceback = sys.exc_info()
-		flag = "read_mrx problem: %s %s %s" % (etype,evalue,etraceback)
+		flag = "read_mrx problem: %s %s %s line %s" % (etype,evalue,etraceback,etraceback.tb_lineno)
 		if csvout or nomarc: # idea here is to report something out even when mrx has issues
-			write_csv(bbid,flag,'',scheme, '','')
-		print(flag)
+			write_csv(bbid,flag,'',scheme,'','')
 
-	if not nomarc and True in enhanced:
+	if not nomarc and ((enhanced_only == True and (True in enhanced)) or (enhanced_only == False)):
 		try:
 			subprocess.Popen(['xmllint','--format','-o', OUTDIR+outfile, TMPDIR+outfile+'_tmp.xml']).wait()
+			mrx2mrc(OUTDIR+outfile)
 		except:
 			etype,evalue,etraceback = sys.exc_info()
 			print("xmllint problem: %s" % evalue)
 
 	if (justfetch is None and keep == False):
 		os.remove(INDIR+mrcrec)
+		
 
-
-def query_lc(subject, scheme):
+def query_lc(heading, scheme):
 	'''
 	Query id.loc.gov (but only after checking the local file)
 	'''
@@ -352,7 +397,7 @@ def query_lc(subject, scheme):
 	with con:
 		con.row_factory = lite.Row
 		cur = con.cursor()
-		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(subject.decode('utf8'),scheme,))
+		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
 		rows = cur.fetchall()
 		if len(rows) != 0:
 			cached = True
@@ -364,17 +409,20 @@ def query_lc(subject, scheme):
 			date2 = datetime.strptime(todaydb,'%Y-%m-%d')
 			date1 = datetime.strptime(str(date),'%Y%m%d')
 			datediff = abs((date2 - date1).days)
-		if (cached == True and datediff <= maxage): #and ignore_cache == False):
-			src += ' (cache)'
-			return uri,src
+	
+	cached,datediff,uri = check_cache(heading,scheme)
+
+	if (cached == True and datediff <= maxage): #and ignore_cache == False):
+		src += ' (cache)'
+		return uri,src
 			
 	if (cached == True and datediff > maxage) or cached == False or (ignore_cache == True and uri == 'None (404)'):
 		# ping id.loc only if not found in cache, or if checked long, long ago
-		subject = subject.replace('&','%26')
-		subject = subject.decode('utf8')
-		to_get = ID_SUBJECT_RESOLVER + subject
+		heading = heading.replace('&','%26')
+		heading = heading.decode('utf8')
+		to_get = ID_HEADING_RESOLVER + heading
 		headers = {"Accept":"application/xml"}
-		time.sleep(1)
+		time.sleep(3) # see http://id.loc.gov/robots.txt
 		resp = requests.head(to_get, headers=headers, allow_redirects=True)
 		if resp.status_code == 200:
 			uri = resp.headers["x-uri"]
@@ -392,8 +440,8 @@ def query_lc(subject, scheme):
 							uri = (other.attrib['href'], other.text)
 					except:
 						pass
-						
-				cache_it(uri,cached,subject,scheme)
+
+				cache_it(uri,cached,heading,scheme)
 				
 				return uri,src # ==>
 				
@@ -405,28 +453,29 @@ def query_lc(subject, scheme):
 				return msg,src
 		elif resp.status_code == 404:
 			msg = "None (404)"
-			cache_it(msg,cached,subject,scheme)
+			cache_it(msg,cached,heading,scheme)
 			return msg,src
 		else: # resp.status_code != 404 and status != 200:
 			msg = "None (" + resp.status_code + ")"
-			cache_it(msg,cached,subject,scheme)
+			cache_it(msg,cached,heading,scheme)
 			return msg,src
 
 
-def cache_it(uri,cached,subject, scheme):
+def cache_it(uri,cached,heading, scheme):
 	'''
 	Put uris from id.loc.gov into cache (or update the date checked)
 	'''
 	con = lite.connect(DB)
-	print('[cache_it] %s %s %s %s' % (uri,cached,subject, scheme))
+	if verbose:
+		print('[cache_it] %s %s %s %s' % (uri,cached,heading, scheme))
 	try:
 		with con:
 			cur = con.cursor() 
 			if cached == True:
-				updateurl = (today, subject, uri)
+				updateurl = (today, heading, uri)
 				cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
 			else:
-				newuri = (subject, scheme, uri, today)
+				newuri = (heading, scheme, uri, today)
 				cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
 	except Exception as e:
 		print('cache_it error %s' % e.value)
@@ -434,7 +483,6 @@ def cache_it(uri,cached,subject, scheme):
 		
 	if con:
 		con.close()
-
 
 
 def check_heading(bbid,rec,scheme):
@@ -453,141 +501,205 @@ def check_heading(bbid,rec,scheme):
 		subfields = ['a','b','c','d','q']
 	if not rec.get_fields(*fields):
 		write_csv(bbid,'','',scheme,'','') # report out records with no headings
-	for f in rec.get_fields(*fields):
-		mrx_subs = []
-		h1 = ''
-		h2 = ''
-		src = '4store'
-		childrens = 0
-		if scheme == 'sub':
-			childrens = int(f.indicators[1]) # second indicator '1' is LC subject headings for children's literature
-		for s in f.get_subfields(*subfields):
-			s = s.encode('utf8').strip()
-			# TODO: a fuller list could be put into a sqlite db to be checked here
-			# Account for abbreviations (using negative lookbehind)
-			re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
-			re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
-			re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
-			mrx_subs.append(s)
-		if not mrx_subs:
-			continue # continue with next iteration of loop (e.g. prevent empty heading when 730 only has $t)
-		h = "--".join(mrx_subs)
-		h = h.replace(',--',', ')
-		h = h.replace('.--','. ')
-		h = h.replace('--(',' (') # $q
-		uri = query_4s(h,scheme, childrens)
-		src = '4store'
-		if uri is None:
-			h1 = h.rstrip('.').rstrip(',')
-			h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
-			uri = query_4s(h1,scheme, childrens)
+	try:
+		for f in rec.get_fields(*fields):
+			mrx_subs = []
+			h1 = ''
+			h2 = ''
 			src = '4store'
-			if uri is None and noidloc == False: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
-				try:
-					uri,src = query_lc(h,scheme)
-				except:
-					#src = 'id.loc'
-					pass # as when uri has 'classification'
-				if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
-					h2 = h.rstrip('.').rstrip(',')
-					h2 = re.sub('(^\[|\]$)','',h2)
+			thesaurus = 0
+			if scheme == 'sub':
+				if f.indicators[1] != ' ':
+					thesaurus = int(f.indicators[1]) # 6xx ind2: '1' is LC subject headings for children's literature
+			for s in f.get_subfields(*subfields):
+				if scheme == 'nam' and re.match('\d00',f.tag) and not f.get_subfields('c','q','d'):
+					continue # continue with next iteration of loop (skip plain names)
+				s = s.encode('utf8').strip()
+				# TODO: a fuller list could be put into a sqlite db to be checked here
+				# Account for abbreviations (using negative lookbehind)
+				re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
+				re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
+				re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
+				mrx_subs.append(s)
+			if not mrx_subs:
+				continue # continue with next iteration of loop (e.g. prevent empty heading when 730 only has $t)
+			h = "--".join(mrx_subs)
+			h = h.replace(',--',', ')
+			h = h.replace('.--','. ')
+			h = h.replace('--(',' (') # $q
+			uri = query_4s(h, scheme, thesaurus)
+			src = '4store'
+			if uri is None: # if nothing found, modify it and try again
+				h1 = h.rstrip('.').rstrip(',')
+				h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
+				uri = query_4s(h1, scheme, thesaurus)
+				src = '4store'
+				if uri is None and noidloc == False: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
 					try:
-						uri,src = query_lc(h2,scheme)
+						uri,src = query_lc(h,scheme)
 					except:
 						#src = 'id.loc'
 						pass # as when uri has 'classification'
-		if nomarc == False and uri is not None and uri.startswith('http'):
-			# check for existing id.loc $0 and compare if present
-			existing_sub0 = f.get_subfields('0')
-			if existing_sub0:
-				existing_sub0 = existing_sub0[0].encode('utf8').strip()
-				if existing_sub0 == uri:
-					src = 'already has %s' % existing_sub0
-					enhanced = True
-				elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
-					pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
-					uri = '(uri) ' + uri
-					pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one.
-					src = 'REPLACED %s with %s' % (existing_sub0,uri)
-					enhanced = True
+					if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
+						h2 = h.rstrip('.').rstrip(',')
+						h2 = re.sub('(^\[|\]$)','',h2)
+						try:
+							uri,src = query_lc(h2,scheme)
+						except:
+							#src = 'id.loc'
+							pass # as when uri has 'classification'
+			if nomarc == False and ((uri is not None and uri.startswith('http'))):
+				# check for existing id.loc $0 and compare if present
+				existing_sub0s = f.get_subfields('0')
+	
+				if existing_sub0s:
+					for existing_sub0 in existing_sub0s:
+						existing_sub0 = existing_sub0[0].encode('utf8').strip() # this is cheking the first sub0 only
+						if existing_sub0 == uri:
+							src = 'already has %s' % existing_sub0
+							enhanced = True
+						elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
+							pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
+							uri = '(uri)' + uri
+							pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one.
+							src = 'REPLACED %s with %s' % (existing_sub0,uri)
+							enhanced = True
+						else:
+							uri = '(uri)' + uri
+							pymarc.Field.add_subfield(f,"0",uri)
+							enhanced = True
 				else:
-					uri = '(uri) ' + uri
+					uri = '(uri)' + uri
 					pymarc.Field.add_subfield(f,"0",uri)
 					enhanced = True
+			if h2 != '' and uri is None:
+				heading = h
+			elif (h2 != '' and uri.startswith('http') == True):
+				heading = h2
+			elif (h1 != '' and uri.startswith('http') == True):
+				heading = h1
+			elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
+				heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
 			else:
-				uri = '(uri) ' + uri
-				pymarc.Field.add_subfield(f,"0",uri)
-				enhanced = True
-		if h2 != '' and uri is None:
-			heading = h
-		elif (h2 != '' and uri.startswith('http') == True):
-			heading = h2
-		elif (h1 != '' and uri.startswith('http') == True):
-			heading = h1
-		elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
-			heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
-		else:
-			heading = h
+				heading = h
+		
+			if verbose:
+				print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
+			if csvout or nomarc:
+				write_csv(bbid, heading, uri, scheme,f.tag,src)
 	
-		if verbose:
-			print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
-		if csvout or nomarc:
-			write_csv(bbid, heading, uri, scheme,f.tag,src)
-
-	if enhanced == False:
-		return enhanced, None
-	else:
-		return enhanced, rec
+		if enhanced == False and enhanced_only == True:
+			return enhanced, None # => add bib to report, but no marcxml record in the out dir (see read_mrx)
+		else:
+			return enhanced, rec
+	except:
+		etype,evalue,etraceback = sys.exc_info()
+		print("check_heading problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
 		
 
 def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
 	Write out csv reports, one each for names ('_nam_') and subjects ('_sub_')
 	'''
-	with open(REPORTS+'/'+fname+'_'+scheme+'_'+today+'.csv','ab+') as outfile:
+	with open(REPORTS+'/_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
+		if uri is not None and uri != '':
+			uri = uri.replace('(uri)','')
 		row = (bbid, heading, uri, tag, src)
 		writer.writerow(row)
 
-	
+
+def check_cache(heading,scheme):
+	'''
+	Check the cache
+	'''
+	cached = False
+	datediff = 0
+	con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
+	uri = ''
+	try:
+		with con:
+			con.row_factory = lite.Row
+			cur = con.cursor()
+			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
+			rows = cur.fetchall()
+			if len(rows) != 0:
+				cached = True
+				for row in rows:
+					uri = row['uri']
+					dbscheme = row['scheme']
+					date = row['date']
+			if cached == True and date is not None:
+				date2 = datetime.strptime(todaydb,'%Y-%m-%d')
+				date1 = datetime.strptime(str(date),'%Y%m%d')
+				datediff = abs((date2 - date1).days)		
+			return cached,datediff,uri
+	except:
+		etype,evalue,etraceback = sys.exc_info()
+		print("check_cache problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
+
+
+def mrx2mrc(mrx):
+	'''
+	Convert marcxml file to MARC21 for loading using Strawn RecordReloader
+	'''
+	basename = os.path.basename(mrx)
+	mrc = str.replace(basename,'.mrx','.mrc')
+	try:
+		conv = subprocess.Popen(['mono',CMARCEDIT,'-s',mrx,'-d',TOLOAD+mrc,'-xmlmarc'])
+		conv.communicate()
+		msg = 'converted mrx to mrc'
+	except:
+		etype,evalue,etraceback = sys.exc_info()
+		msg = "problem converting mrx to mrc. %s" % evalue
+	logging.info(msg)
+
+			
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Generate hold reports.')
-	parser.add_argument("-v", "--verbose",required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
+	parser.add_argument("-v", "--verbose", required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
 	parser.add_argument("-n", "--names", required=False, default=False, dest="names", action="store_true", help="Get URIs for names.")
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
-	parser.add_argument("-r", "--report", required=False, default=False, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
+	parser.add_argument("-r", "--report", required=False, default=True, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records. Overrides -F.")
-	parser.add_argument("-f", "--fetch", type=str, required=False,dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
-	parser.add_argument("-F", "--Fetch", type=str, required=False,dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
-	parser.add_argument("-k", "--keep",required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
-	parser.add_argument('-a','--age',dest="maxage",help="Max days after which to re-check id.loc.gov",required=False, default=30)
-	parser.add_argument('-i','--ignore',dest="noidloc",required=False, default=False, action="store_true",help="Ignore id.loc.gov")
-	parser.add_argument("-C", "--ignore-cache",required=False, default=False,dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc.gov again).")
+	parser.add_argument("-p", "--pyget", required=False, default=False, dest="pyget", action="store_true", help="Use Python function to get records, rather than voyager_helpers.rb.")
+	parser.add_argument("-f", "--fetch", required=False, type=str, dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
+	parser.add_argument("-F", "--Fetch", required=False, type=str, dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
+	parser.add_argument("-k", "--keep", required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
+	parser.add_argument("-a",'--age', required=False, dest="maxage",help="Max days after which to re-check id.loc.gov", default=30)
+	parser.add_argument("-i",'--ignore', required=False, dest="noidloc", default=False, action="store_true", help="Ignore id.loc.gov")
+	parser.add_argument("-C", "--ignore-cache",required=False, default=False, dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc.gov again).")
+	parser.add_argument("-e","--enhanced",required=False, default=False, dest="enhanced", action="store_true", help="Just output enhanced records for loading.")
 
 	args = vars(parser.parse_args())
-	verbose = args['verbose']
-	names = args['names']
-	subjects = args['subjects']
-	nomarc = args['nomarc']
 	csvout = args['csvout']
-	justfetch = args['justfetch']
+	enhanced_only = args['enhanced']
 	fetchngo = args['fetchngo']
+	ignore_cache = args['ignore_cache']
+	justfetch = args['justfetch']
 	keep = args['keep']
 	maxage = int(args['maxage'])
+	names = args['names']
 	noidloc = args['noidloc']
-	ignore_cache = args['ignore_cache']
-	fname = ''
+	nomarc = args['nomarc']
+	subjects = args['subjects']
+	verbose = args['verbose']
+	pyget = args['pyget']
+	picklist = ''
 	
 	if justfetch or fetchngo:
 		if justfetch:
-			fname = os.path.basename(justfetch).replace('.csv','')
+			picklist = os.path.basename(justfetch).replace('.csv','')
 		elif fetchngo:
-			fname = os.path.basename(fetchngo).replace('.csv','')
+			picklist = os.path.basename(fetchngo).replace('.csv','')
 	
 	logging.info('='*50)
 	setup()
 	if justfetch is not None:
-		get_bibdata()
+		if pyget:
+			get_bibdata()
+		else:
+			get_bibdata_rb()
 	else:
 		main()
 	cleanup()
