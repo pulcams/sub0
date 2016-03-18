@@ -2,7 +2,7 @@
 #-*- coding: utf-8 -*-
 """
 Gets lists of bib ids for uri enhancement.
-Resulting csv lists go into directory specified in BIBS variable (e.g. ./csv).
+Resulting csv lists go into directory specified in the BIBS variable (e.g. ./csv).
 Resulting 'bibs_' report goes into ./reports/yyyymmdd by default.
 A simple sqlite db keeps track of (unsuppressed) bib ids retrieved to date; each run begins where the last left off.
 Cache schema:
@@ -23,12 +23,12 @@ config = ConfigParser.RawConfigParser()
 config.read('./config/uris.cfg')
 BIBS = config.get('env','bibs')
 LOG = config.get('env', 'logdir')
-DB = './db/bibs.db' # TODO consider table in existing cache.db
 USER = config.get('vger', 'user')
 PASS = config.get('vger', 'pw')
 PORT = config.get('vger', 'port')
 SID = config.get('vger', 'sid')
 HOST = config.get('vger', 'ip')
+DB = config.get('db', 'bib_cache')
 TODAY = time.strftime('%Y%m%d') # for csv filename
 
 # logging
@@ -78,8 +78,8 @@ def ask_the_oracle(last_bib):
 	rows.close()
 	oradb.close()
 
-	thisfile = time.strftime("%Y%m%d%I%M%S")
-	with open(BIBS+thisfile+'.csv','wb+') as outfile:
+	#thisfile = time.strftime("%Y%m%d%I%M%S") # including h, m, s was to avoid overwriting files written on same day
+	with open(BIBS+TODAY+'.csv','wb+') as outfile:
 		writer = csv.writer(outfile)
 		header = ['BIB_ID']
 		writer.writerow(header) 
@@ -109,6 +109,8 @@ def ask_the_oracle(last_bib):
 	if con:
 		print('closing sqlite3 connection')
 		con.close()
+
+	print('wrote to ' + BIBS + TODAY + '.csv')
 
 
 if __name__ == "__main__":
