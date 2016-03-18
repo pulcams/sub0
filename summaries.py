@@ -2,14 +2,14 @@
 #-*- coding: utf-8 -*-
 """
 Get totals for a given run (identified using w3cdtf, yyyymmdd), and write out reports:
-enhanced, nonenhanced, TOTALS, subfield0.html
-Example (test run):
+enhanced, nonenhanced, TOTALS, index.html
+Example (a test run):
 
-`python summaries.py -r 20160114 -d test`
+`python summaries.py -r 20160401 -d test`
 
-Example (production run):
+Example (a production run; 'prod' is default):
 
-`python summaries.py -r 20160114`
+`python summaries.py -r 20160401`
 
 from 20160113
 pmg
@@ -52,7 +52,7 @@ def get_totals(csvreport):
 	'''
 	report = csvreport.replace('.csv','')
 
-	with open(REPORTS+report+'.csv','rb') as infile, open(REPORTS+report+'_enhanced.csv','wb+') as enhanced_file, open(REPORTS+report+'_nonenhanced.csv','wb+') as nonenhanced_file:
+	with open(REPORTS+report+'.csv','rb') as infile, open(REPORTS+report+'_enhanced.csv','wb+') as enhanced_file, open(REPORTS+report+'_nonenhanced.csv','wb+') as nonenhanced_file, open(REPORTS+'out.txt') as outbibs_file:
 		bibdict = dict()
 		bibset = set()
 		infile.readline()
@@ -61,11 +61,23 @@ def get_totals(csvreport):
 		found = 0
 		notfound = 0
 		noheading = 0
+
+		# get the total bibs downloaded (as opposed to totals per scheme)
+		out_reader = csv.reader(outbibs_file)
+		firstbib = next(out_reader)[0] # first bib downloaded
+		bibs_downloaded = 1
+		for bib in out_reader:
+			bibs_downloaded += 1
+			#print(bibs_downloaded)
+			pass
+		finalbib = bib[0] # last bib downloaded
+		
+
 		for row in reader:
 			bib = row[0]
 			uri = row[2]
-			if total == 0:
-				startbib = bib
+			#if total == 0:
+			#	startbib = bib # first bib per scheme report
 			if uri.startswith('http'):
 				enhanced = 'y'
 				found += 1
@@ -74,14 +86,14 @@ def get_totals(csvreport):
 				notfound += 1 # heading was tested and not found
 			else:
 				enhanced = 'n'
-				noheading += 1 # there was no heading -- TODO: something's off here?
+				noheading += 1 # there was no heading -- TODO: what's up here?
 			if bib in bibdict:
 				bibdict[bib].append(enhanced)
 			else:
 				bibdict[bib] = [enhanced]
 			if bib != '':
 				total += 1
-		lastbib = bib
+		#lastbib = bib # the last bib per scheme report (e.g. last bib in nam report, which can differ from last bib in sub report)
 		enhanced = 0		
 		for k,v in bibdict.iteritems():
 			if 'y' in v:
@@ -92,20 +104,25 @@ def get_totals(csvreport):
 				writer = csv.writer(nonenhanced_file)
 				writer.writerow([k])
 
-	return [report,len(bibdict),startbib,lastbib,enhanced,int(total)-int(noheading),found,notfound]
+	return [report,bibs_downloaded,firstbib,finalbib,enhanced,int(total)-int(noheading),found,notfound]
 
 
-def write_totals(report,bibdict,startbib,lastbib,enhanced,headings_total,found,notfound,db,totes):
+def write_totals(report,bibdict,startbib,finalbib,enhanced,headings_total,found,notfound,db,totes):
 	'''
 	Write new lines in TOTALS.csv
 	'''
 	with open(REPORTDIR+'TOTALS.csv','ab+') as totals_file:
 		reader = csv.reader(totals_file)
-		if (os.path.getsize(REPORTDIR+'TOTALS.csv') == 0):
+		if (os.path.getsize(REPORTDIR+'TOTALS.csv') == 0): # create new TOTALS.csv if doesn't exist
 			writer = csv.writer(totals_file)
 			writer.writerow(['run','records','first_bib','last_bib','records_enhanced','headings_total','headings_found','headings_not_found','total_loaded','db'])
 		writer = csv.writer(totals_file)
-		writer.writerow([report,bibdict,startbib,lastbib,enhanced,headings_total,found,notfound,totes,db])	
+		newrow = [report,str(bibdict),startbib,finalbib,str(enhanced),str(headings_total),str(found),str(notfound),str(totes),db]
+		for row in reader:
+			if row == newrow:
+				continue
+			else:
+				writer.writerow(newrow)	
 
 
 def total_enhanced(report):
@@ -126,11 +143,12 @@ def make_html():
 	"""
 	Generate a simple html page
 	"""
-	htmlfile = open('./html/subfield0.html','wb+')
+	htmlfile = open('./html/index.html','wb+')
 	sch = ''
 	header = """<!doctype html>
 <html>
 <meta charset="utf-8">
+<title>loads</title>
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 <style>
@@ -144,51 +162,13 @@ def make_html():
 	color:red;
 	}
 </style>
-<script src="http://www.d3plus.org/js/d3.js"></script>
-<script src="http://www.d3plus.org/js/d3plus.js"></script>
 <div class="container" id="top">
 <h1>$0 loads</h1>
+<a href="about.html">about</a>
 <table class="table-condensed table-bordered">
-<tr><th>run</th><th>scheme</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>records_enhanced</th><th>headings_total<!--<a href="#headings">?</a>--></th><th>headings_found</th><th>headings_not_found</th><th>total_enhanced</th><th>vger_db</th></tr>"""
+<tr><th>run</th><th>scheme</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>records_enhanced</th><th>headings_total</th><th>headings_found</th><th>headings_not_found</th><th>recs_enhanced</th><th>vger_db</th></tr>"""
 
 	footer = """</table>
-<br /><hr /><div id="headings" style="color:#999;">
-	<!--<a href="#top">top</a>-->
-	<h4>fields checked</h4>
-	<p>names ('_nam_')</p>
-	<dl class="dl-horizontal">
-		<dt>tags</dt>
-		<dd>100,110,130,700,710,730</dd>
-		<dt>subfields</dt>
-		<dd>a,b,c,d,q</dd>
-	</dl>
-	<p>subjects ('_sub_')</p>
-	<dl class="dl-horizontal">
-		<dt>tags</dt>
-		<dd>600,610,611,630,650,651</dd>
-		<dt>subfields</dt>
-		<dd>a,b,c,d,f,g,h,j,k,l,m,n,o,p,q,r,s,t,u,v,x,y,z,4</dd>
-	</dl>
-		<hr />
-		<a href="#top">top</a>
-	<h4>report structure</h4>
-<p>click on a link in the 'run' column</p>
-<pre>
-reports/
-└── 20160113 <span class='note'># <= id of run</span>
-    ├── _nam_20160113.csv <span class='note'># <= full list of headings and responses</span>
-    ├── _nam_20160113_enhanced.csv  <span class='note'># <= list of bibs that were enhanced</span>
-    ├── _nam_20160113_nonenhanced.csv  <span class='note'># <= list of bibs that were *not* enhanced</span>
-    ├── reloader <span class='note'># <= files from Strawn's Record Reloader</span>
-    │   ├── combined_to_load.mrc
-    │   ├── RECORD.REPLACE.20160114.114024.RecordsModified.txt
-    │   ├── RECORD.REPLACE.20160114.114543.MarcArchive.mrc
-    │   └── RECORD.REPLACE.20160114.114543.Report.txt
-    ├── _sub_20160113.csv
-    ├── _sub_20160113_enhanced.csv
-    └── _sub_20160113_nonenhanced.csv
-</pre>
-</div>
 </div>
 </html>
 """
@@ -204,7 +184,7 @@ reports/
 				run = r.group(0)
 			if s:
 				sch = s.group(1)
-			htmlfile.write('<tr><td><a href="subfield0/reports/%s" target="_BLANK">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (run,run,sch,row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9]))
+			htmlfile.write('<tr><td><a href="reports/%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (run,run,sch,row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9]))
 	htmlfile.write(footer)
 	print('wrote html')
 
