@@ -47,13 +47,35 @@ For 'help':
 
 For reporting, `summaries.py` outputs totals to a TOTALS file as well as an html file.
 
-### Current workflow
+### Initial workflow
 * wait until late afternoon / early evening
 * `python vger.py` # get list of unsuppressed bibs into ./csv/yyyymmdd.csv
 * `python uris.py -vnsr -F yyyymmdd` # process them, outputting reports as well as marcxml and MARC21 (mrc)
 * load mrc file into Voyager using Gary Strawn's [RecordReloader](http://files.library.northwestern.edu/public/RecordReloader/)
 * `python summaries.py -r yyyymmdd` # add stats to index.html file
 * post newly generated index.html and report files to local server
+
+### Project directory
+... looks like this (runs are identified using date in w3cdtf, yyyymmdd) ... 
+```
+sub0
+├── config 
+├── csv  <= lists of bibs, output of vger.py
+├── db  <= caches
+│   ├── bibs.db
+│   └── cache.db
+├── html  <= html reports
+├── _in  <= marcxml records to be enhanced
+├── load  <= mrc file to be loaded into voyager
+├── logs
+├── _out  <= enhanced marcxml records
+├── reports  <= detailed reports per run
+│   ├── yyyymmdd  <= reports for a give run
+│   └── TOTALS.csv  <= stats output from summaries.py, basis of html reports
+├── summaries.py  <= generate stats
+├── uris.py  <= the enhance records
+└── vger.py  <= get the next batch of bibs
+```
 
 ### Dependencies
  * [4store](http://4store.org/)
