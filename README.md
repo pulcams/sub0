@@ -6,9 +6,13 @@
 
 <b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
-The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a set of MARCXML records in the `./in` directory. (`vger.py` will grab the next n records from Voyager, keeping a cache in a sqlite db.)
+The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a file of MARCXML records in the `./in` directory. (`vger.py` will grab the next batch of n records from Voyager, keeping a cache in a little sqlite db.)
 
-Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [4store](http://4store.org/). When a given heading isn't found, id.loc.gov can be queried directly to check whether it's been added since the download files were prepared.  
+Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [4store](http://4store.org/). When a given heading isn't found there, the script checks a cache of recent searches against id.loc.gov. If not found in the cache, id.loc.gov can be queried directly.
+
+For now anyway, we're just using [known-label retrieval](http://id.loc.gov/techcenter/searching.html), not 'didyoumean' or 'suggest'). 
+
+Install [4store](http://4store.org/) (Ubuntu)
 ```
 sudo apt-get install 4store
 sudo mkdir /var/lib/4store
@@ -25,23 +29,31 @@ Do the same for lcnaf, using say port 8001 (note: Oct 2014 file takes about 20G 
 ### Examples
 Retrieve Voyager records, check names and subjects against lcnaf and lcsaf, and generate enhanced copies as well as csv reports: 
 
-`python uris.py -vnsr -F csv/my_bibs.csv`
+`python uris.py -vnsr -F csv/20160401.csv`
 
-Another option: Get a bunch of records into the `./in` directory...
+Another option: Get a file of records into the `./IN` directory...
 
-`python uris.py -v -f csv/my_bibs.csv` 
+`python uris.py -v -f csv/20160401.csv` 
 
-...then parse them, getting URIs for names and inserting them into copies... 
+... then parse them, getting URIs for names and subjects ... 
 
-`python uris.py -vn`
+`python uris.py -vns`
 
-Enhanced MARCXML records will be in the `./out` dir.
+Enhanced MARCXML records will be in the `./OUT` dir.
 
 For 'help':
 
 `python uris.py -h`
 
 For reporting, `summaries.py` outputs totals to a TOTALS file as well as an html file.
+
+### Current workflow
+* wait until late afternoon / early evening
+* `python vger.py` # get list of unsuppressed bibs into ./csv/yyyymmdd.csv
+* `python uris.py -vnsr -F yyyymmdd` # process them, outputting reports as well as marcxml and MARC21 (mrc)
+* load mrc file into Voyager using Gary Strawn's [RecordReloader](http://files.library.northwestern.edu/public/RecordReloader/)
+* `python summaries.py -r yyyymmdd` # add stats to index.html file
+* post newly generated index.html and report files to local server
 
 ### Dependencies
  * [4store](http://4store.org/)
