@@ -26,13 +26,10 @@
 	<p>names ('_nam_')</p>
 	<dl class="dl-horizontal">
 		<dt>tags</dt>
-		<dd>100,700</dd>
-		<dt>subfields</dt>
-		<dd>a,b</dd>
-		<dt>tags</dt>
-		<dd>110,130,710,730</dd>
+		<dd>100,110,130,700,710,730</dd>
 		<dt>subfields</dt>
 		<dd>a,b,c,d,q</dd>
+		<dd><sub>NOTE: 100 and 700 must have c,d or q</sub></dd>
 	</dl>
 	<p>subjects ('_sub_')</p>
 	<dl class="dl-horizontal">
@@ -43,7 +40,7 @@
 	</dl>
 		<hr />
 	<h4>report structure</h4>
-<p>viewable by clicking a link in the <a href='index.html'>'run' column</a> (pertains to production runs only)</p>
+<p>viewable by clicking a link in the <a href='index.html'>'run' column</a> (first few production runs)</p>
 <pre>
 reports/
 └── 20160113 <span class='note'># <= id of run</span>
@@ -54,9 +51,9 @@ reports/
     ├── _sub_20160113_enhanced.csv
     ├── _sub_20160113_nonenhanced.csv
     ├── bibs.txt <span class='note'># <= list of bib_ids for this run (unsuppressed bibs)</span>
-    └──reloader <span class='note'># <= files from Strawn's Record Reloader</span>
-    	├── RECORD.REPLACE.20160114.114543.MarcArchive.mrc
-    	└── RECORD.REPLACE.20160114.114543.Report.txt
+    └──reloader <span class='note'># <= report from Strawn's Record Reloader</span>
+    	├── RecordsModified.txt
+    	└── Report.txt
 </pre>
 <hr />
 <h4>code</h4>
