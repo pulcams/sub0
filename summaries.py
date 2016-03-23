@@ -17,11 +17,13 @@ pmg
 import argparse
 import ConfigParser
 import csv
+import fileinput
 import glob
 import os
 import re
 import sys
 import time
+from collections import defaultdict
 
 config = ConfigParser.RawConfigParser()
 config.read('./config/uris.cfg')
@@ -42,6 +44,7 @@ def main(report):
 		if re.match('^_(nam|sub)_'+run+'.csv$',filename):
 			all_totals.append(get_totals(filename))
 	totes = total_enhanced(report)
+	
 	for t in all_totals:
 		write_totals(t[0],t[1],t[2],t[3],t[4],t[5],t[6],t[7],db,totes)
 
@@ -52,7 +55,7 @@ def get_totals(csvreport):
 	'''
 	report = csvreport.replace('.csv','')
 
-	with open(REPORTS+report+'.csv','rb') as infile, open(REPORTS+report+'_enhanced.csv','wb+') as enhanced_file, open(REPORTS+report+'_nonenhanced.csv','wb+') as nonenhanced_file, open(REPORTS+'out.txt') as outbibs_file:
+	with open(REPORTS+report+'.csv','rb') as infile, open(REPORTS+report+'_enhanced.csv','wb+') as enhanced_file, open(REPORTS+report+'_nonenhanced.csv','wb+') as nonenhanced_file, open(REPORTS+'bibs.txt') as outbibs_file:
 		bibdict = dict()
 		bibset = set()
 		infile.readline()
@@ -111,20 +114,36 @@ def write_totals(report,bibdict,startbib,finalbib,enhanced,headings_total,found,
 	'''
 	Write new lines in TOTALS.csv
 	'''
-	with open(REPORTDIR+'TOTALS.csv','ab+') as totals_file:
-		reader = csv.reader(totals_file)
-		if (os.path.getsize(REPORTDIR+'TOTALS.csv') == 0): # create new TOTALS.csv if doesn't exist
-			writer = csv.writer(totals_file)
-			writer.writerow(['run','records','first_bib','last_bib','records_enhanced','headings_total','headings_found','headings_not_found','total_loaded','db'])
+	tempfile = REPORTDIR+'TOTALS.tmp'
+	totalsfile = REPORTDIR+'TOTALS.csv'
+	seen = set()
+	newrow = [report,str(bibdict),startbib,finalbib,str(enhanced),str(headings_total),str(found),str(notfound),str(totes),db]
+
+	with open(totalsfile,'ab+') as totals_file:
 		writer = csv.writer(totals_file)
-		newrow = [report,str(bibdict),startbib,finalbib,str(enhanced),str(headings_total),str(found),str(notfound),str(totes),db]
+		if (os.path.getsize(totalsfile) == 0): # create new TOTALS.csv if doesn't exist
+			writer.writerow(['run','records','first_bib','last_bib','records_enhanced','headings_total','headings_found','headings_not_found','total_loaded','db'])
+	
+	with open(totalsfile,'rb') as existing_totals_file,open(tempfile,'wb+') as temp_totals_file:
+		reader = csv.reader(existing_totals_file)
+		writer = csv.writer(temp_totals_file)
 		for row in reader:
-			if row == newrow:
-				continue
-			else:
-				writer.writerow(newrow)	
+			thisrun = row[0]
+			seen.add(thisrun)
+						
+		if newrow[0] not in seen: # write unique new rows to temp file
+			writer.writerow(newrow)
 
+	# read from temp file (unique rows) and append to TOTALS
+	with open(tempfile,'rb') as temp_totals_file, open(totalsfile,'ab') as new_totals_file:
+		reader = csv.reader(temp_totals_file)
+		writer = csv.writer(new_totals_file)
+		for row in reader:
+			writer.writerow(newrow)
+		
+	os.remove(tempfile) # remove temp file
 
+		
 def total_enhanced(report):
 	'''
 	Get total of enhanced files for a given run (nam + sub)
@@ -166,7 +185,7 @@ def make_html():
 <h1>$0 loads</h1>
 <a href="about.html">about</a>
 <table class="table-condensed table-bordered">
-<tr><th>run</th><th>scheme</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>records_enhanced</th><th>headings_total</th><th>headings_found</th><th>headings_not_found</th><th>recs_enhanced</th><th>vger_db</th></tr>"""
+<tr><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><th>details</th></tr>"""
 
 	footer = """</table>
 </div>
@@ -174,17 +193,43 @@ def make_html():
 """
 
 	htmlfile.write(header)
+	dct = defaultdict(list)
 	with open(REPORTDIR+'TOTALS.csv','ab+') as totals:
 		totals.readline()
 		reader = csv.reader(totals)
 		for row in reader:
 			r = re.search('\d{8}',row[0]) # assumes filename pattern _schema_yyyymmdd.csv
-			s = re.search('^_(\D{3})_',row[0])
 			if r:
 				run = r.group(0)
-			if s:
-				sch = s.group(1)
-			htmlfile.write('<tr><td><a href="reports/%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' % (run,run,sch,row[1],row[2],row[3],row[4],row[5],row[6],row[7],row[8],row[9]))
+	
+			# add to the dictionary, with run as the key
+			dct[run].append(row[0:])
+		
+		for k,v in sorted(dct.items()):
+			run = k
+			bibs = v[0][1]
+			first = v[0][2]
+			last = v[0][3]
+			enhanced = v[0][8]
+			db = v[0][9]
+
+			htmlfile.write('<tr><td><a href="reports/%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>' % (run,run,bibs,first,last, enhanced,db))
+			innertablehead = '''<table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr>'''
+			htmlfile.write(innertablehead)
+			for scheme in sorted(v):
+				s = re.search('^_(\D{3})_',scheme[0])
+				if s:
+					sch = s.group(1)
+				records_enhanced = scheme[4]
+				headings_total = scheme[5]
+				headings_found = scheme[6]
+				headings_not_found = scheme[7]
+
+				htmlfile.write('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (sch,records_enhanced,headings_total,headings_found, headings_not_found))
+				
+			htmlfile.write('</table>')
+			htmlfile.write('</td></tr>')
+
 	htmlfile.write(footer)
 	print('wrote html')
 
