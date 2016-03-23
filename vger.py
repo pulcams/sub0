@@ -115,7 +115,7 @@ def ask_the_oracle(last_bib):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Get list of BIB_IDs from Voyager to serve as input for uris.py')
-	parser.add_argument("-b", "--bibs",required=False, default=10000, dest="bibstofetch", help="Number of bibs to fetch")
+	parser.add_argument("-b", "--bibs",required=False, default=5000, dest="bibstofetch", help="Number of bibs to fetch")
 	args = vars(parser.parse_args())
 	tofetch = args['bibstofetch']
 	
