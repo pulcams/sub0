@@ -84,9 +84,9 @@ def main():
 	
 	if fetchngo is not None: # if fetching from bibdata.princeton.edu...
 		if pyget:
-			get_bibdata_rb()
-		else:
 			get_bibdata()
+		else:
+			get_bibdata_rb()
 	else: # if parsing files already in the IN dir
 		mrcrecs = os.walk(INDIR).next()[2]
 		mrcrecs.sort(key=alphanum_key)
@@ -196,10 +196,9 @@ def get_bibdata_rb():
 	'''
 	Query the PUL bibdata service using voyager_helpers gem (maybe better for large batches)
 	'''
-	logging.info('getting bibdata using get_bibdata.rb')
-
 	try:
 		subprocess.Popen(['ruby',VOYAGER_HELPER,picklist]).wait()
+		logging.info('got bibdata using get_bibdata.rb')
 	except:
 		etype,evalue,etraceback = sys.exc_info()
 		print("get_bibdata_rb problem: %s" % evalue)
@@ -212,13 +211,11 @@ def get_bibdata():
 	'''
 	Query the PUL bibdata service
 	'''
-	logging.info('getting bibdata')
-	
 	conn = httplib.HTTPSConnection("bibdata.princeton.edu")
 	flag = ""
 	NS = "{http://www.loc.gov/MARC21/slim}"
 		
-	if fetchngo is not None:
+	if fetchngo is not None: # TODO: is this still needed?
 		picklist = fetchngo
 	else:
 		picklist = justfetch
@@ -246,7 +243,7 @@ def get_bibdata():
 
 			f = open(INDIR+today+'.mrx', 'a') # single file mode
 			## f = open(INDIR+bibid+'.mrx', 'w') # mult files mode
-			f2 = open(LOG+'out.txt', 'a') # simple log
+			f2 = open(REPORTS+'bibs.txt', 'a') # simple log
 						
 			try:
 				doc = etree.fromstring(data)
@@ -272,6 +269,8 @@ def get_bibdata():
 		f.writelines("</collection>")
 		f.close() # single file mode
 
+		logging.info('got bibdata')
+		
 		if justfetch is None: # single file mode
 			read_mrx(today+'.mrx',names,subjects) # single file mode
 
@@ -393,30 +392,31 @@ def query_lc(heading, scheme):
 	src = 'id.loc.gov'
 	cached = False
 	datediff = 0
-	con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
-	with con:
-		con.row_factory = lite.Row
-		cur = con.cursor()
-		cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
-		rows = cur.fetchall()
-		if len(rows) != 0:
-			cached = True
-			for row in rows:
-				uri = row['uri']
-				dbscheme = row['scheme']
-				date = row['date']
-		if cached == True and date is not None:
-			date2 = datetime.strptime(todaydb,'%Y-%m-%d')
-			date1 = datetime.strptime(str(date),'%Y%m%d')
-			datediff = abs((date2 - date1).days)
+	if ignore_cache == False:
+		con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
+		with con:
+			con.row_factory = lite.Row
+			cur = con.cursor()
+			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
+			rows = cur.fetchall()
+			if len(rows) != 0:
+				cached = True
+				for row in rows:
+					uri = row['uri']
+					dbscheme = row['scheme']
+					date = row['date']
+			if cached == True and date is not None:
+				date2 = datetime.strptime(todaydb,'%Y-%m-%d')
+				date1 = datetime.strptime(str(date),'%Y%m%d')
+				datediff = abs((date2 - date1).days)
+		
+		cached,datediff,uri = check_cache(heading,scheme)
 	
-	cached,datediff,uri = check_cache(heading,scheme)
-
-	if (cached == True and datediff <= maxage): #and ignore_cache == False):
-		src += ' (cache)'
-		return uri,src
+		if (cached == True and datediff <= maxage):
+			src += ' (cache)'
+			return uri,src
 			
-	if (cached == True and datediff > maxage) or cached == False or (ignore_cache == True and uri == 'None (404)'):
+	if ((noidloc == False) and ((cached == True and datediff > maxage) or cached == False) or (ignore_cache == True and uri == 'None (404)')):
 		# ping id.loc only if not found in cache, or if checked long, long ago
 		heading = heading.replace('&','%26')
 		heading = heading.decode('utf8')
@@ -490,6 +490,7 @@ def check_heading(bbid,rec,scheme):
 	Check a given heading against 4store and, if that fails, id.loc.gov
 	'''
 	enhanced = False
+	heading = ''
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
 		fields = ['600','610','611','630','650','651']
@@ -534,29 +535,28 @@ def check_heading(bbid,rec,scheme):
 				h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
 				uri = query_4s(h1, scheme, thesaurus)
 				src = '4store'
-				if uri is None and noidloc == False: # <= if still not found in 4store, with or without trailing punct., ping id.loc.gov
+				try:
+					uri,src = query_lc(h,scheme) # <= if still not found in 4store, check cache and ping id.loc.gov
+				except:
+					#src = 'id.loc'
+					pass # as when uri has 'classification'
+				if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
+					h2 = h.rstrip('.').rstrip(',')
+					h2 = re.sub('(^\[|\]$)','',h2)
 					try:
-						uri,src = query_lc(h,scheme)
+						uri,src = query_lc(h2,scheme)
 					except:
 						#src = 'id.loc'
 						pass # as when uri has 'classification'
-					if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
-						h2 = h.rstrip('.').rstrip(',')
-						h2 = re.sub('(^\[|\]$)','',h2)
-						try:
-							uri,src = query_lc(h2,scheme)
-						except:
-							#src = 'id.loc'
-							pass # as when uri has 'classification'
 			if nomarc == False and ((uri is not None and uri.startswith('http'))):
 				# check for existing id.loc $0 and compare if present
 				existing_sub0s = f.get_subfields('0')
 	
 				if existing_sub0s:
 					for existing_sub0 in existing_sub0s:
-						existing_sub0 = existing_sub0[0].encode('utf8').strip() # this is cheking the first sub0 only
+						existing_sub0 = existing_sub0.encode('utf8').strip().replace('(uri)','')
 						if existing_sub0 == uri:
-							src = 'already has %s' % existing_sub0
+							src = 'already has %s' % existing_sub0 # printing out full uri for double-checking
 							enhanced = True
 						elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
 							pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
@@ -572,17 +572,22 @@ def check_heading(bbid,rec,scheme):
 					uri = '(uri)' + uri
 					pymarc.Field.add_subfield(f,"0",uri)
 					enhanced = True
-			if h2 != '' and uri is None:
-				heading = h
-			elif (h2 != '' and uri.startswith('http') == True):
-				heading = h2
-			elif (h1 != '' and uri.startswith('http') == True):
-				heading = h1
-			elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
-				heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
-			else:
-				heading = h
-		
+
+			if uri is None:
+				if re.match('.*[\.,]$',h):
+					heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
+				else:
+					heading = h
+			elif uri is not None:
+				if (h2 != '' and uri.startswith('http') == True):
+						heading = h2
+				elif (h1 != '' and uri.startswith('http') == True):
+						heading = h1
+				elif (uri.startswith('http') == False and re.match('.*[\.,]$',h)): 
+					heading = h[:-1] + '['+h[-1:]+']'
+				else:
+					heading = h
+				
 			if verbose:
 				print('%s, %s, %s, %s' % (bbid, heading.decode('utf8'), uri, src))
 			if csvout or nomarc:
