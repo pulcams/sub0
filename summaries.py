@@ -164,35 +164,35 @@ def make_html():
 	"""
 	htmlfile = open('./html/index.html','wb+')
 	sch = ''
+	total_prod = 0
 	header = """<!doctype html>
 <html>
 <meta charset="utf-8">
 <title>loads</title>
+<script src="https://code.jquery.com/jquery-2.2.2.min.js"
+			  integrity="sha256-36cp2Co+/62rEAAYHLmRCPIych47CvdM+uTBJwSzWjI="
+			  crossorigin="anonymous"></script>
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
 <style>
 	div {
 	font-family:Consolas,monaco,monospace;
 	}
-	pre {
-	background-color:#fff;
-	}
-	.note {
-	color:red;
+	.hi {
+	background-color:yellow;
 	}
 </style>
 <div class="container" id="top">
 <h1>$0 loads</h1>
-<a href="about.html">about</a>
-<table class="table-condensed table-bordered">
+<a href="about.html">about</a>"""
+
+	start_main_table="""<table class="table-condensed table-bordered">
 <tr><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><th>details</th></tr>"""
 
-	footer = """</table>
+	end_main_table = """</table>
 </div>
 </html>
 """
-
-	htmlfile.write(header)
 	dct = defaultdict(list)
 	with open(REPORTDIR+'TOTALS.csv','ab+') as totals:
 		totals.readline()
@@ -204,6 +204,22 @@ def make_html():
 	
 			# add to the dictionary, with run as the key
 			dct[run].append(row[0:])
+
+		htmlfile.write(header)
+		prod_count = 0
+		for k,v in sorted(dct.items()):
+			enhanced = v[0][8]
+			db = v[0][9]
+			# get total records loaded into prod
+			if db == 'prod':
+				if prod_count == 0:
+					total_prod = int(enhanced)
+				else:
+					total_prod += int(enhanced)
+				prod_count += 1
+				
+		htmlfile.write('<p>Total in Production: <span class="hi">%s</span></p>' % total_prod)
+		htmlfile.write(start_main_table)
 		
 		for k,v in sorted(dct.items()):
 			run = k
@@ -230,7 +246,7 @@ def make_html():
 			htmlfile.write('</table>')
 			htmlfile.write('</td></tr>')
 
-	htmlfile.write(footer)
+	htmlfile.write(end_main_table)
 	print('wrote html')
 
 
