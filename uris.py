@@ -34,7 +34,7 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO:
-# Flag for rec per file vs single file modes?
+# Flag for rec-per-file vs single-file modes?
 
 # config
 config = ConfigParser.RawConfigParser()
@@ -215,15 +215,15 @@ def get_bibdata():
 	flag = ""
 	NS = "{http://www.loc.gov/MARC21/slim}"
 		
-	if fetchngo is not None: # TODO: is this still needed?
-		picklist = fetchngo
-	else:
-		picklist = justfetch
+	#if fetchngo is not None: # TODO: remove
+	#	picklist = fetchngo
+	#else:
+	#	picklist = justfetch
 	
 	with open(picklist,'rb') as csvfile:
 		reader = csv.reader(csvfile,delimiter=',', quotechar='"')
 
-		firstline = reader.next() # skip header row
+		firstline = reader.next() # skip the header row
 		
 		count = 0
 
@@ -284,8 +284,8 @@ def query_4s(label, scheme, thesaurus):
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-	##label = urllib.quote_plus(label) # this doesn't work, keeping as reminder
-	label = label.replace('"',"%22") # see bib 568 "Problemna..." (heading with double quotes).
+	##label = urllib.quote_plus(label) # this doesn't work; keeping as reminder
+	label = label.replace('"',"%22") # e.g. bib 568 "Problemna..." (heading with double quotes).
 	# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
 	query = 'SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}' % label
 	
@@ -293,7 +293,7 @@ def query_4s(label, scheme, thesaurus):
 	headers={ 'content-type':'application/x-www-form-urlencoded'}
 	
 	r = requests.post(host + "sparql/", data=data, headers=headers )
-	if r.status_code != requests.codes.ok:   # <= something went wrong with 4store
+	if r.status_code != requests.codes.ok:   # <= would mean something went wrong with 4store
 		msg = '%s, %s' % (label, r.text)
 		sys.exit(msg)
 	try:
@@ -450,15 +450,17 @@ def query_lc(heading, scheme):
 					msg = 'None (wrong schema: %s)' % uri[18:]
 				elif (scheme == 'sub' and 'authorities/names' in uri):
 					msg = 'None (wrong schema: %s)' % uri[18:]
-				return msg,src
+				return msg,src # ==>
+				
 		elif resp.status_code == 404:
 			msg = "None (404)"
 			cache_it(msg,cached,heading,scheme)
-			return msg,src
+			return msg,src # ==>
+			
 		else: # resp.status_code != 404 and status != 200:
 			msg = "None (" + resp.status_code + ")"
 			cache_it(msg,cached,heading,scheme)
-			return msg,src
+			return msg,src # ==>
 
 
 def cache_it(uri,cached,heading, scheme):
@@ -538,7 +540,6 @@ def check_heading(bbid,rec,scheme):
 				try:
 					uri,src = query_lc(h,scheme) # <= if still not found in 4store, check cache and ping id.loc.gov
 				except:
-					#src = 'id.loc'
 					pass # as when uri has 'classification'
 				if uri is None or not uri.startswith('http'): # <= if not found, try without trailing punct.
 					h2 = h.rstrip('.').rstrip(',')
@@ -546,7 +547,6 @@ def check_heading(bbid,rec,scheme):
 					try:
 						uri,src = query_lc(h2,scheme)
 					except:
-						#src = 'id.loc'
 						pass # as when uri has 'classification'
 			if nomarc == False and ((uri is not None and uri.startswith('http'))):
 				# check for existing id.loc $0 and compare if present
@@ -594,9 +594,9 @@ def check_heading(bbid,rec,scheme):
 				write_csv(bbid, heading, uri, scheme,f.tag,src)
 	
 		if enhanced == False and enhanced_only == True:
-			return enhanced, None # => add bib to report, but no marcxml record in the out dir (see read_mrx)
+			return enhanced, None # ==> add bib to report, but no marcxml record in the out dir (see read_mrx)
 		else:
-			return enhanced, rec
+			return enhanced, rec # ==>
 	except:
 		etype,evalue,etraceback = sys.exc_info()
 		print("check_heading problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
