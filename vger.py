@@ -78,7 +78,7 @@ def ask_the_oracle(last_bib):
 	rows.close()
 	oradb.close()
 
-	#thisfile = time.strftime("%Y%m%d%I%M%S") # including h, m, s was to avoid overwriting files written on same day
+	#thisfile = time.strftime("%Y%m%d%I%M%S") # included h, m, s to avoid overwriting files written on same day
 	with open(BIBS+TODAY+'.csv','wb+') as outfile:
 		writer = csv.writer(outfile)
 		header = ['BIB_ID']
