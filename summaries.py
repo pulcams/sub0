@@ -165,6 +165,15 @@ def make_html():
 	htmlfile = open('./html/index.html','wb+')
 	sch = ''
 	total_prod = 0
+	total_checked = 0
+	enhanced_total = 0
+	headings_total = 0
+	total_headings_found = 0
+	total_headings_not_found = 0
+	s_enhanced_total = 0
+	s_headings_total = 0
+	s_total_headings_found = 0
+	s_total_headings_not_found = 0
 	header = """<!doctype html>
 <html>
 <meta charset="utf-8">
@@ -181,19 +190,26 @@ def make_html():
 	.hi {
 	background-color:yellow;
 	}
+	.table-condensed > tbody > tr > td, .table-condensed > tbody > tr > th, .table-condensed > tfoot > tr > td, .table-condensed > tfoot > tr > th, .table-condensed > thead > tr > td, .table-condensed > thead > tr > th {
+	padding: 5px;
+}
 </style>
 <div class="container" id="top">
 <h1>$0 loads</h1>
 <a href="about.html">about</a>"""
 
 	start_main_table="""<table class="table-condensed table-bordered">
-<tr><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><th>details</th></tr>"""
+<tr  bgcolor="#F0F8FF"><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><th width="400px">breakdown</th></tr>
+<tr bgcolor="#F0F8FF"><td colspan="6"></td><td><table class="table-condensed" width="100%%" style="font-size:.75em;"><tr bgcolor="#F0F8FF"><td width="20%%">scheme</td><td width="20%%">enhanced</td><td width="20%%">headings</td><td width="20%%">found</td><td width="20%%">not_found</td></tr></table></td></tr>
+"""
 
 	end_main_table = """</table>
 </div>
+<br />
 </html>
 """
 	dct = defaultdict(list)
+	sch_dct = defaultdict(list)
 	with open(REPORTDIR+'TOTALS.csv','ab+') as totals:
 		totals.readline()
 		reader = csv.reader(totals)
@@ -208,17 +224,61 @@ def make_html():
 		htmlfile.write(header)
 		prod_count = 0
 		for k,v in sorted(dct.items()):
-			enhanced = v[0][8]
+			checked = int(v[0][1])
+			enhanced = int(v[0][8])
 			db = v[0][9]
 			# get total records loaded into prod
 			if db == 'prod':
 				if prod_count == 0:
-					total_prod = int(enhanced)
+					total_prod = enhanced
+					total_checked = checked
 				else:
-					total_prod += int(enhanced)
-				prod_count += 1
+					total_prod += enhanced
+					total_checked += checked
 				
-		htmlfile.write('<p>Total in Production: <span class="hi">%s</span></p>' % total_prod)
+				for scheme in sorted(v):
+					s = re.search('^_(\D{3})_',scheme[0])
+					if s:
+						sch = s.group(1)
+					
+					if sch == 'nam':
+						if prod_count == 0:
+							enhanced_total = int(scheme[4])
+							headings_total = int(scheme[5])
+							total_headings_found = int(scheme[6])
+							total_headings_not_found = int(scheme[7])
+						else:
+							enhanced_total += int(scheme[4])
+							headings_total += int(scheme[5])
+							total_headings_found += int(scheme[6])
+							total_headings_not_found += int(scheme[7])
+					elif sch == 'sub':
+						if prod_count == 0:
+							s_enhanced_total = int(scheme[4])
+							s_headings_total = int(scheme[5])
+							s_total_headings_found = int(scheme[6])
+							s_total_headings_not_found = int(scheme[7])
+						else:
+							s_enhanced_total += int(scheme[4])
+							s_headings_total += int(scheme[5])
+							s_total_headings_found += int(scheme[6])
+							s_total_headings_not_found += int(scheme[7])
+
+			prod_count += 1
+
+		htmlfile.write('<h3>totals</h3>')
+		htmlfile.write('<table class="table-condensed table-bordered">')
+		htmlfile.write('<tr><td>records processed</td><td>%s</td></tr>' % total_checked)
+		htmlfile.write('<tr><td>records enhanced</td><td>%s</td></tr>' % total_prod)
+		htmlfile.write('</table><br />')
+
+		htmlfile.write('<table class="table-condensed table-bordered">')
+		htmlfile.write('<tr><td width="20%%">scheme</td><td width="20%%">enhanced</td><td width="20%%">headings</td><td width="20%%">found</td><td width="20%%">not_found</td></tr>')
+		htmlfile.write('<tr><td>names</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (enhanced_total,headings_total,total_headings_found,total_headings_not_found))
+		htmlfile.write('<tr><td>subjects</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (s_enhanced_total,s_headings_total,s_total_headings_found,s_total_headings_not_found))
+		htmlfile.write('</table>')
+
+		htmlfile.write('<h3>details</h3>')
 		htmlfile.write(start_main_table)
 		
 		for k,v in sorted(dct.items()):
@@ -230,7 +290,7 @@ def make_html():
 			db = v[0][9]
 
 			htmlfile.write('<tr><td><a href="reports/%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>' % (run,run,bibs,first,last, enhanced,db))
-			innertablehead = '''<table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr>'''
+			innertablehead = '''<table class="table-condensed table-hover" width="100%%" style="font-size:.75em;">'''
 			htmlfile.write(innertablehead)
 			for scheme in sorted(v):
 				s = re.search('^_(\D{3})_',scheme[0])
@@ -241,7 +301,7 @@ def make_html():
 				headings_found = scheme[6]
 				headings_not_found = scheme[7]
 
-				htmlfile.write('<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>' % (sch,records_enhanced,headings_total,headings_found, headings_not_found))
+				htmlfile.write('<tr><td width="20%%">%s</td><td width="20%%">%s</td><td width="20%%">%s</td><td width="20%%">%s</td><td width="20%%">%s</td></tr>' % (sch,records_enhanced,headings_total,headings_found, headings_not_found))
 				
 			htmlfile.write('</table>')
 			htmlfile.write('</td></tr>')
