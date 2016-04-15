@@ -72,6 +72,7 @@ sub0
 ├── reports  <= detailed reports per run
 │   ├── yyyymmdd  <= reports for a give run
 │   └── TOTALS.csv  <= stats output from summaries.py, basis of html reports
+├── preload_check.py  <= check bibs against voyager to avoid overwriting recent changes
 ├── summaries.py  <= generate stats
 ├── uris.py  <= the enhance records
 └── vger.py  <= get the next batch of bibs
