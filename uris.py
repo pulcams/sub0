@@ -35,7 +35,7 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO:
-# Flag for rec-per-file vs single-file modes?
+# Add option for checking Voyager auth tables
 
 # config
 config = ConfigParser.RawConfigParser()
@@ -47,8 +47,8 @@ REPORTDIR = config.get('env', 'reports')
 LOG = config.get('env', 'logdir')
 TOLOAD = config.get('env', 'load')
 CMARCEDIT = config.get('env', 'cmarcedit')
-VOYAGER_HELPER = config.get('env','voyager_helper')
 DB = config.get('db','heading_cache')
+VOYAGER_HELPER = config.get('env','voyager_helper')
 ID_HEADING_RESOLVER = "http://id.loc.gov/authorities/label/"
 
 today = time.strftime('%Y%m%d') # name log files
@@ -69,7 +69,6 @@ def main():
 	try:
 		s = requests.get('http://localhost:8000/status')
 		n = requests.get('http://localhost:8001/status')
-		#n = requests.get('http://localhost:8002/status')
 		i = requests.head('http://id.loc.gov')
 		if s.status_code == 200:
 			msg = 'lcsaf connection ok\n'
@@ -85,21 +84,15 @@ def main():
 
 	logging.info('main')
 	
-	if fetchngo is not None: # if fetching from bibdata.princeton.edu...
-		if pyget:
-			get_bibdata()
-		else:
-			get_bibdata_rb()
-	else: # if parsing files already in the IN dir
-		mrcrecs = os.walk(INDIR).next()[2]
-		mrcrecs.sort(key=alphanum_key)
-		if not mrcrecs:
-			sys.exit('-'*75+'\nThere are no MARC records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
-		else:
-			for mrcrec in mrcrecs:
-				if verbose:
-					print('current file is %s' % mrcrec)
-				read_mrx(mrcrec,names,subjects)
+	mrcrecs = os.walk(INDIR).next()[2]
+	mrcrecs.sort(key=alphanum_key)
+	if not mrcrecs:
+		sys.exit('-'*75+'\nThere are no MARC records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
+	else:
+		for mrcrec in mrcrecs:
+			if verbose:
+				print('current file is %s' % mrcrec)
+			read_mrx(mrcrec,names,subjects)
 
 
 def try_int(s):
@@ -125,7 +118,7 @@ def setup():
 	'''
 	logging.info('seting up')
 
-	if (not os.path.exists(TMPDIR)) and (justfetch is None):
+	if (not os.path.exists(TMPDIR)): #and (justfetch is None):
 		os.makedirs(TMPDIR)
 		
 	if not os.path.exists(INDIR):
@@ -153,7 +146,7 @@ def setup():
 		if names:
 			schemelist.append('nam')
 		for scheme in schemelist:
-			rpt = REPORTS+'/'+picklist+'_'+scheme+'_'+today+'.csv'
+			rpt = REPORTS+'/_'+scheme+'_'+today+'.csv'
 			try:
 				os.rename(rpt, rpt + '.bak') # back up output from previous runs on same day
 			except OSError:
@@ -173,7 +166,7 @@ def cleanup():
 	indir_count = str(len([name for name in os.listdir(INDIR) if os.path.isfile(os.path.join(INDIR, name))]))
 	outdir_count = str(len([name for name in os.listdir(OUTDIR) if os.path.isfile(os.path.join(OUTDIR, name))]))
 	
-	if justfetch is None and keep == False:
+	if keep == False: #justfetch is None:
 		tempdirs = [TMPDIR, INDIR]
 		for d in tempdirs:
 			if os.path.isdir(d):
@@ -181,101 +174,12 @@ def cleanup():
 			else:
 				print(d + ' didn\'t exist.')
 	
-	if justfetch or fetchngo:
-		msg = indir_count + ' mrx files are in the IN dir.'
-		logging.info(msg)
-	if fetchngo:
-		msg = outdir_count + ' enhanced records are in OUT dir.'
-		logging.info(msg)
 	if csvout:
 		msg = 'reports are in reports dir.'
 		logging.info(msg)
 	print('See ya.' + '\n' + '.'*50)
 	
 	logging.info('cleaned up')
-
-
-def get_bibdata_rb():
-	'''
-	Query the PUL bibdata service using voyager_helpers gem (maybe better for large batches)
-	'''
-	try:
-		subprocess.Popen(['ruby',VOYAGER_HELPER,picklist]).wait()
-		logging.info('got bibdata using get_bibdata.rb')
-	except:
-		etype,evalue,etraceback = sys.exc_info()
-		print("get_bibdata_rb problem: %s" % evalue)
-
-	if justfetch is None: # single file mode
-		read_mrx(picklist+'.mrx',names,subjects) # single file mode
-	
-
-def get_bibdata():
-	'''
-	Query the PUL bibdata service
-	'''
-	conn = httplib.HTTPSConnection("bibdata.princeton.edu")
-	flag = ""
-	NS = "{http://www.loc.gov/MARC21/slim}"
-		
-	#if fetchngo is not None: # TODO: remove
-	#	picklist = fetchngo
-	#else:
-	#	picklist = justfetch
-	
-	with open(picklist,'rb') as csvfile:
-		reader = csv.reader(csvfile,delimiter=',', quotechar='"')
-
-		firstline = reader.next() # skip the header row
-		
-		count = 0
-
-		f = open(INDIR+today+'.mrx', 'w+')
-		f.writelines("<collection>")
-		
-		for row in reader:
-	
-			count += 1 # just for verbose mode
-			
-			bibid = row[0]
-
-			conn.request("GET", "/bibliographic/"+bibid)
-			got = conn.getresponse()
-			data = got.read()		
-			conn.close() 
-
-			f = open(INDIR+today+'.mrx', 'a') # single file mode
-			## f = open(INDIR+bibid+'.mrx', 'w') # mult files mode
-			f2 = open(REPORTS+'bibs.txt', 'a') # simple log
-						
-			try:
-				doc = etree.fromstring(data)
-				data = etree.tostring(doc,pretty_print=False,encoding='utf-8')
-				f001 = doc.find("marc:record/marc:controlfield[@tag=\'001\']",namespaces={'marc':'http://www.loc.gov/MARC21/slim'})
-				f.writelines(data)
-				#f.close() # mult files mode
-				flag = "ok"
-				f2.write("%s\n" % bibid)
-				#time.sleep(1)
-				#if justfetch is None: # mult files mode
-					#read_mrx(bibid+'.mrx',names,subjects) # mult files mode
-			except: # As when record has been suppressed after initial report was run, in which case, no xml
-				etype,evalue,etraceback = sys.exc_info()
-				flag = "problem: %s %s %s, line %s" % (etype,evalue,etraceback,etraceback.tb_lineno)
-				f2.write("%s %s\n" % (bibid, flag))
-
-			f2.close()
-				
-			if verbose:
-				print("(%s) Got %s" % (count, bibid))
-				
-		f.writelines("</collection>")
-		f.close() # single file mode
-
-		logging.info('got bibdata')
-		
-		if justfetch is None: # single file mode
-			read_mrx(today+'.mrx',names,subjects) # single file mode
 
 
 def query_4s(label, scheme, thesaurus):
@@ -287,13 +191,11 @@ def query_4s(label, scheme, thesaurus):
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-	##label = urllib.quote_plus(label) # this doesn't work; keeping as reminder
 
 	label = label.replace('"',"%22") # e.g. bib 568 "Problemna..." (heading with double quotes).
 	# replace combined characters (id does this automatically)
 	label = unicodedata.normalize('NFC', label.decode('utf8'))
 	label = re.sub('\s+',' ',label)
-	# label = re.sub('(\.)(\w)','\g<1> \g<2>', label, flags=re.I) # this works for some spacing errors in names, but we need D.C. etc.
 	# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
 	query = 'SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}' % label
 
@@ -367,15 +269,12 @@ def read_mrx(mrcrec,names,subjects):
 				enhanced.append(en) 	
 				if en == True and r not in recs:
 					recs.append(r)
-		if nomarc == False: #and (True in enhanced):
-			outfile = str.replace(mrcrec,'.xml','') # single file mode
-			fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+') # single file mode
+		if nomarc == False:
+			outfile = str.replace(mrcrec,'.xml','') 
+			fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+') 
 			fh.write(mrxheader)
 			for record in recs:
 				if record is not None:
-					#outfile = str.replace(mrcrec,'.xml','') # mult files mode
-					#fh = open(TMPDIR+outfile+'_tmp.xml', 'wb+') # mult files mod
-					#fh.write(mrxheader) # mult files mod
 					try:
 						out = "%s" % (pymarc.record_to_xml(record))
 						fh.write(out)
@@ -405,7 +304,7 @@ def read_mrx(mrcrec,names,subjects):
 			etype,evalue,etraceback = sys.exc_info()
 			print("xmllint problem: %s" % evalue)
 
-	if (justfetch is None and keep == False):
+	if (keep == False):
 		os.remove(INDIR+mrcrec)
 		
 
@@ -413,27 +312,8 @@ def query_lc(heading, scheme):
 	'''
 	Query id.loc.gov (but only after checking the local file)
 	'''
-	# First, check the cache TODO: remove this?
 	src = 'id.loc.gov'
-	cached = False
-	datediff = 0
-	if ignore_cache == False:
-		con = lite.connect(DB) # sqlite3 table with fields heading, scheme, uri, date
-		with con:
-			con.row_factory = lite.Row
-			cur = con.cursor()
-			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
-			rows = cur.fetchall()
-			if len(rows) != 0:
-				cached = True
-				for row in rows:
-					uri = row['uri']
-					dbscheme = row['scheme']
-					date = row['date']
-			if cached == True and date is not None:
-				date2 = datetime.strptime(todaydb,'%Y-%m-%d')
-				date1 = datetime.strptime(str(date),'%Y%m%d')
-				datediff = abs((date2 - date1).days)
+	if ignore_cache == False: # First, check the cache
 		
 		cached,datediff,uri = check_cache(heading,scheme)
 	
@@ -482,11 +362,39 @@ def query_lc(heading, scheme):
 			cache_it(msg,cached,heading,scheme)
 			return msg,src # ==>
 			
-		else: # resp.status_code != 404 and status != 200:
+		else: # if resp.status_code != 404 and status != 200:
 			msg = "None (" + resp.status_code + ")"
 			cache_it(msg,cached,heading,scheme)
 			return msg,src # ==>
+
 	
+def record_bib(bib):
+	'''
+	Add bib of retrieved record into bibs.db
+	'''
+	con = lite.connect(DB)
+	with con:
+		con.row_factory = lite.Row
+		cur = con.cursor()
+		cur.execute("SELECT * FROM bibs WHERE bbid=?",(bib,))
+		rows = cur.fetchall()
+		if len(rows) == 0:
+			cached = False
+		else:
+			cached = True
+				
+		todaydb = time.strftime('%Y-%m-%d %H:%M:%S')
+		cur = con.cursor() 
+		if cached == False:
+			newbib = (bib,todaydb)
+			cur.executemany("INSERT INTO bibs VALUES(?, ?)", (newbib,))
+		else:
+			updatedbib = (todaydb,bib)
+			cur.executemany("UPDATE bibs SET date=? WHERE bbid=?", (updatedbib,))
+	if con:
+		print('closing sqlite3 connection')
+		con.close()
+
 
 def cache_it(uri,cached,heading, scheme):
 	'''
@@ -602,8 +510,6 @@ def check_heading(bbid,rec,scheme):
 					enhanced = True
 
 			if uri is None:
-				#if re.match('.*[\.,]$',h):
-				#	heading = h[:-1] + '['+h[-1:]+']' # to indicate that it's been searched with and without . or ,
 				if h2 is not None:
 					heading = h2
 				elif h2 is not None:
@@ -641,8 +547,6 @@ def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
 	with open(REPORTS+'/_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
-		#if uri is not None and uri != '':
-		#	uri = uri.replace('(uri)','')
 		row = (bbid, heading, uri, tag, src)
 		writer.writerow(row)
 
@@ -700,9 +604,6 @@ if __name__ == "__main__":
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
 	parser.add_argument("-r", "--report", required=False, default=True, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records. Overrides -F.")
-	parser.add_argument("-p", "--pyget", required=False, default=False, dest="pyget", action="store_true", help="Use Python function to get records, rather than voyager_helpers.rb.")
-	parser.add_argument("-f", "--fetch", required=False, type=str, dest="justfetch", help="Just fetch records listed in the given file. They will go into IN dir (and stay there). To enhance them, run again WITHOUT -f or -F flags.")
-	parser.add_argument("-F", "--Fetch", required=False, type=str, dest="fetchngo", help="Fetch records listed in the given file and then enhance them 'on the fly'. Records are not left on disk.")
 	parser.add_argument("-k", "--keep", required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
 	parser.add_argument("-a",'--age', required=False, dest="maxage",help="Max days after which to re-check id.loc.gov", default=7)
 	parser.add_argument("-i",'--ignore', required=False, dest="noidloc", default=False, action="store_true", help="Ignore id.loc.gov")
@@ -712,9 +613,7 @@ if __name__ == "__main__":
 	args = vars(parser.parse_args())
 	csvout = args['csvout']
 	enhanced_only = args['enhanced']
-	fetchngo = args['fetchngo']
 	ignore_cache = args['ignore_cache']
-	justfetch = args['justfetch']
 	keep = args['keep']
 	maxage = int(args['maxage'])
 	names = args['names']
@@ -722,23 +621,9 @@ if __name__ == "__main__":
 	nomarc = args['nomarc']
 	subjects = args['subjects']
 	verbose = args['verbose']
-	pyget = args['pyget']
-	picklist = ''
-	
-	if justfetch or fetchngo:
-		if justfetch:
-			picklist = os.path.basename(justfetch).replace('.csv','')
-		elif fetchngo:
-			picklist = os.path.basename(fetchngo).replace('.csv','')
 	
 	logging.info('='*50)
 	setup()
-	if justfetch is not None:
-		if pyget:
-			get_bibdata()
-		else:
-			get_bibdata_rb()
-	else:
-		main()
+	main()
 	cleanup()
 	logging.info('='*50)
