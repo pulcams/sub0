@@ -61,8 +61,37 @@ def get_last_bib():
 			last_bib = str(row[0])
 	msg = 'bib_id %s, %s bibs' % (last_bib,bibstofetch)
 	logging.info(msg)
+	get_bib_total()
 	ask_the_oracle(last_bib)
 
+
+def get_bib_total():
+	'''
+	Get total number of unsuppressed bibs for reporting
+	'''
+	con = lite.connect(DB)
+	
+	q = """SELECT COUNT(DISTINCT(BIB_ID)) 
+			FROM BIB_MASTER 
+			WHERE SUPPRESS_IN_OPAC = 'N'"""
+
+	dsn = cx_Oracle.makedsn(HOST,PORT,SID)
+	oradb = cx_Oracle.connect(USER,PASS,dsn)
+		
+	rows = oradb.cursor()
+	rows.execute(q)
+	r = rows.fetchall()
+	
+	rows.close()
+	oradb.close()
+
+	with open(BIBS+TODAY+'.csv','wb+') as outfile:
+		writer = csv.writer(outfile)
+		for row in list(r):
+			bib = str(row[0])
+			writer.writerow(['BIB_ID',bib]) # stick the total no of unsuppressed bibs next to col header
+	print('wrote bibs total to ' + BIBS + picklist + '.csv')
+	
  
 def ask_the_oracle(last_bib):
 	'''
@@ -89,10 +118,10 @@ def ask_the_oracle(last_bib):
 	rows.close()
 	oradb.close()
 
-	with open(BIBS+TODAY+'.csv','wb+') as outfile:
+	with open(BIBS+TODAY+'.csv','ab') as outfile:
 		writer = csv.writer(outfile)
-		header = ['BIB_ID']
-		writer.writerow(header) 
+		#header = ['BIB_ID']
+		#writer.writerow(header) 
 		for row in list(r):
 			bib = str(row[0])
 			writer.writerow([bib])
@@ -197,24 +226,28 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Get list of BIB_IDs from Voyager to serve as input for uris.py')
 	parser.add_argument("-b", "--bibs",required=False, default=5000, dest="bibstofetch", help="Number of bibs to fetch")
 	parser.add_argument("-v", "--verbose", required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
-	parser.add_argument("-f", "--fetch", required=False, default='csv/'+TODAY+'.csv', type=str, dest="fetch", help="Fetch records listed in the given file given as 'csv/yyyymmdd.csv'.")
 	parser.add_argument("-p", "--pyget", required=False, default=False, dest="pyget", action="store_true", help="Get records with Python function using httplib (rather than the default voyager_helpers.rb).")
 	parser.add_argument("-F", "--justfetch", required=False, type=str, dest="justfetch", help="**Just** fetch records listed in the given file given as 'csv/yyyymmdd.csv', assuming this file is up-to-date. Skip getting new list of bib ids.")
+	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
 	args = vars(parser.parse_args())
 	bibstofetch = args['bibstofetch']
-	fetch = args['fetch']
 	justfetch = args['justfetch']
+	nomarc = args['nomarc']
 	pyget = args['pyget']
 	verbose = args['verbose']
 
-	picklist = os.path.basename(fetch).replace('.csv','')
-	
+	if justfetch:
+		picklist = os.path.basename(justfetch).replace('.csv','')
+	else:
+		picklist = TODAY
+
 	logging.info('='*25)
 	if not justfetch:
 		get_last_bib()
-	if pyget:
-		get_bibdata()
-	else:
-		get_bibdata_rb()
+	if not nomarc:
+		if pyget:
+			get_bibdata()
+		else:
+			get_bibdata_rb()
 	logging.info('='*25)
 
