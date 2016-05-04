@@ -1,24 +1,32 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <meta charset="utf-8">
-<title>loads</title>
+<title>index</title>
+<script src="https://code.jquery.com/jquery-2.2.2.min.js"
+			  integrity="sha256-36cp2Co+/62rEAAYHLmRCPIych47CvdM+uTBJwSzWjI="
+			  crossorigin="anonymous"></script>
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+<link rel="stylesheet" href="css/styles.css">
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
-<style>
-	div {
-	font-family:Consolas,monaco,monospace;
-	}
-	pre {
-	background-color:#fff;
-	}
-	.note {
-	color:red;
-	}
-</style>
 <div class="container" id="top">
-<h1>$0 loads</h1>
-<a href="about.html">about</a>
-<table class="table-condensed table-bordered">
-<tr><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><th>details</th></tr><tr><td><a href="reports/20151208">20151208</a></td><td>10000</td><td>2</td><td>10071</td><td>8108</td><td>test</td><td><table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr><tr><td>nam</td><td>8108</td><td>14130</td><td>11047</td><td>3083</td></tr></table></td></tr><tr><td><a href="reports/20160113">20160113</a></td><td>100</td><td>2</td><td>102</td><td>68</td><td>test</td><td><table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr><tr><td>nam</td><td>47</td><td>114</td><td>54</td><td>60</td></tr><tr><td>sub</td><td>46</td><td>159</td><td>66</td><td>93</td></tr></table></td></tr><tr><td><a href="reports/20160317">20160317</a></td><td>1000</td><td>2</td><td>1010</td><td>817</td><td>prod</td><td><table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr><tr><td>nam</td><td>604</td><td>999</td><td>792</td><td>207</td></tr><tr><td>sub</td><td>474</td><td>1754</td><td>732</td><td>1022</td></tr></table></td></tr><tr><td><a href="reports/20160318">20160318</a></td><td>5000</td><td>1011</td><td>6049</td><td>4057</td><td>prod</td><td><table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr><tr><td>nam</td><td>2514</td><td>3518</td><td>3113</td><td>405</td></tr><tr><td>sub</td><td>3086</td><td>9782</td><td>5339</td><td>4443</td></tr></table></td></tr><tr><td><a href="reports/20160319">20160319</a></td><td>5000</td><td>6050</td><td>11076</td><td>4050</td><td>prod</td><td><table class="table-condensed table-bordered"><tr><td>scheme</td><td>enhanced</td><td>headings_total</td><td>headings_found</td><td>headings_not_found</td></tr><tr><td>nam</td><td>2408</td><td>3496</td><td>2952</td><td>544</td></tr><tr><td>sub</td><td>3094</td><td>9644</td><td>5237</td><td>4407</td></tr></table></td></tr></table>
+	<!-- Static navbar -->
+      <nav class="navbar navbar-default navbar-fixed-top">
+        <div class="container">
+          <div class="navbar-header">
+            <a class="navbar-brand" href="index.html">$0</a>
+          </div>
+          <div id="navbar" class="navbar-collapse collapse">
+            <ul class="nav navbar-nav">
+				<li><a href="totals.html">totals</a></li>
+				<li><a href="loads.html">loads</a></li>
+				<li><a href="about.html">details</a></li>
+            </ul>
+          </div><!--/.nav-collapse -->
+        </div><!--/.container-fluid -->
+      </nav>
+<p>As a small but important step toward making our bibliographic data linkable, we're inserting URIs from <a href='http://id.loc.gov/'>id.loc.gov</a> into the $0 of 1xx, 6xx and 7xx fields, starting with the lowest (oldest) BIB_ID in Voyager.</p>
+<p>These links are not clickable, but can be seen in MARC views of our bibliographic metadata.</p>
+<img src="images/blacklight_example.jpg" alt="blacklight_catalogers_view"/>
+<p><sub>As seen in Blacklight <i>cataloger view</i></sub></p>
 </div>
 </html>
