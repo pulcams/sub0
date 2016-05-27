@@ -69,13 +69,14 @@ def main():
 	try:
 		s = requests.get('http://localhost:8000/status')
 		n = requests.get('http://localhost:8001/status')
-		i = requests.head('http://id.loc.gov')
 		if s.status_code == 200:
 			msg = 'lcsaf connection ok\n'
 		if n.status_code == 200:
 			msg += 'lcnaf connection ok\n'
-		if i.status_code == 200:
-			msg += 'internet connection ok'
+		if noidloc == True:
+			i = requests.head('http://id.loc.gov')
+			if i.status_code == 200:
+				msg += 'internet connection ok'
 		if verbose:
 			print(msg + '\nHere we go...\n')
 			print('.' * 50)
@@ -87,7 +88,7 @@ def main():
 	mrcrecs = os.walk(INDIR).next()[2]
 	mrcrecs.sort(key=alphanum_key)
 	if not mrcrecs:
-		sys.exit('-'*75+'\nThere are no MARC records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
+		sys.exit('-'*75+'\nThere are no marcxml records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
 	else:
 		for mrcrec in mrcrecs:
 			if verbose:
@@ -186,12 +187,13 @@ def query_4s(label, scheme, thesaurus):
 	'''
 	SPARQL query
 	'''
+	src = '4store'
+	
 	# SPARQL endpoint(s), one for each scheme (names, subjects)
 	if scheme == 'nam':
 		host = "http://localhost:8001/"
 	elif scheme == 'sub':
 		host = "http://localhost:8000/"
-
 	label = label.replace('"',"%22") # e.g. bib 568 "Problemna..." (heading with double quotes).
 	# replace combined characters (id does this automatically)
 	label = unicodedata.normalize('NFC', label.decode('utf8'))
@@ -212,7 +214,7 @@ def query_4s(label, scheme, thesaurus):
 	try:
 		doc = etree.fromstring(r.text)
 	except:
-		return None
+		return None,src
 
 	xpth = "//sparql:binding[@name='s'][not(following-sibling::sparql:binding[@name='note'])]/sparql:uri"
 	
@@ -220,10 +222,10 @@ def query_4s(label, scheme, thesaurus):
 		xpth += "[contains(.,'childrensSubjects')]"
 	else: 
 		xpth += "[not(contains(.,'childrensSubjects'))]"
-	
+
 	if len(doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'})) > 0:
 		for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
-			return triple.text
+			return triple.text, src
 	else:
 		data = { 'query': variant_query}
 	
@@ -233,10 +235,13 @@ def query_4s(label, scheme, thesaurus):
 			sys.exit(msg)
 		try:
 			doc = etree.fromstring(r.text)
-			for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
-				return triple.text
+			if triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+				for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+					return triple.text, src
+			else:
+				None,src
 		except:
-			return None
+			return None,src
 
 
 def read_mrx(mrcrec,names,subjects):
@@ -313,59 +318,66 @@ def query_lc(heading, scheme):
 	Query id.loc.gov (but only after checking the local file)
 	'''
 	src = 'id.loc.gov'
-	if ignore_cache == False: # First, check the cache
-		
-		cached,datediff,uri = check_cache(heading,scheme)
 	
+	if ignore_cache == False: # First, check the cache
+	
+		cached,datediff,uri = check_cache(heading,scheme)
+		
 		if (cached == True and datediff <= maxage):
 			src += ' (cache)'
 			return uri,src
-			
-	if (((cached == True and datediff > maxage) or cached == False) or (ignore_cache == True and uri == 'None (404)')):
-		# ping id.loc only if not found in cache, or if checked long, long ago
-		heading = heading.replace('&','%26')
-		heading = heading.decode('utf8')
-		to_get = ID_HEADING_RESOLVER + heading
-		headers = {"Accept":"application/xml"}
-		time.sleep(1) # http://id.loc.gov/robots.txt has 3 secs but kh says not necessary w head requests
-		resp = requests.head(to_get, headers=headers, allow_redirects=True)
-		if resp.status_code == 200:
-			uri = resp.headers["x-uri"]
-			if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
-				try:
-					resp.headers["x-preflabel"]
-				except KeyError as e: # x-preflabel is not returned for deprecated headings, so just check for it as a test
-					uri = "None (deprecated)"
+
+	if noidloc == False: 		
+		if (((cached == True and datediff > maxage) or cached == False) or (ignore_cache == True and uri == 'None (404)')):
+			# ping id.loc only if not found in cache, or if checked long, long ago
+			heading = heading.replace('&','%26')
+			heading = heading.decode('utf8')
+			to_get = ID_HEADING_RESOLVER + heading
+			headers = {"Accept":"application/xml"}
+			time.sleep(1) # http://id.loc.gov/robots.txt has 3 secs but kh says not necessary w head requests
+			resp = requests.head(to_get, headers=headers, allow_redirects=True)
+			if resp.status_code == 200:
+				uri = resp.headers["x-uri"]
+				#if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
+				if ('authorities/names' in uri or 'authorities/subjects' in uri):
 					try:
-						tree = etree.html.fromstring(resp.text)
-						see = tree.xpath("//h3/text()= 'Use Instead'") # this info isn't in the header, so grabbing from html
-						seeother = ''
-						if not see:
-							other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
-							uri = (other.attrib['href'], other.text)
-					except:
-						pass
-
-				cache_it(uri,cached,heading,scheme)
-
-				return uri,src # ==>
-				
-			else:
-				if (scheme == 'nam' and 'authorities/subjects' in uri):
-					msg = 'None (wrong schema: %s)' % uri[18:]
-				elif (scheme == 'sub' and 'authorities/names' in uri):
-					msg = 'None (wrong schema: %s)' % uri[18:]
+						resp.headers["x-preflabel"]
+					except KeyError as e: # x-preflabel is not returned for deprecated headings, so just check for it as a test
+						uri = "None (deprecated)"
+						try:
+							tree = etree.html.fromstring(resp.text)
+							see = tree.xpath("//h3/text()= 'Use Instead'") # this info isn't in the header, so grabbing from html
+							seeother = ''
+							if not see:
+								other = tree.xpath("//h3[text() = 'Use Instead']/following-sibling::ul//div/a")[0]
+								uri = (other.attrib['href'], other.text)
+						except:
+							pass
+	
+					cache_it(uri,cached,heading,scheme)
+	
+					return uri,src # ==>
+					
+				#else:
+				#	if (scheme == 'nam' and 'authorities/subjects' in uri):
+				#		msg = 'None (wrong schema: %s)' % uri[18:]
+				#	elif (scheme == 'sub' and 'authorities/names' in uri):
+				#		msg = 'None (wrong schema: %s)' % uri[18:]
+				#	return msg,src # ==>
+					
+			elif resp.status_code == 404:
+				print(heading, resp.status_code)
+				msg = "None (404)"
+				cache_it(msg,cached,heading,scheme)
 				return msg,src # ==>
 				
-		elif resp.status_code == 404:
-			msg = "None (404)"
-			cache_it(msg,cached,heading,scheme)
-			return msg,src # ==>
-			
-		else: # if resp.status_code != 404 and status != 200:
-			msg = "None (" + resp.status_code + ")"
-			cache_it(msg,cached,heading,scheme)
-			return msg,src # ==>
+			else: # if resp.status_code != 404 and status != 200:
+				msg = "None (" + resp.status_code + ")"
+				cache_it(msg,cached,heading,scheme)
+				return msg,src # ==>
+	else:
+		src += ' (ignored)'
+		return None,src
 
 	
 def record_bib(bib):
@@ -412,6 +424,7 @@ def cache_it(uri,cached,heading, scheme):
 				cur.executemany("UPDATE headings SET date=? WHERE heading=? and uri=?", (updateurl,))
 			else:
 				newuri = (heading, scheme, uri, today)
+				# scheme isn't really important here, but keeping for the moment
 				cur.executemany("INSERT INTO headings VALUES(?, ?, ?, ?)", (newuri,))
 	except Exception as e:
 		print('cache_it error %s' % e.value)
@@ -437,13 +450,12 @@ def check_heading(bbid,rec,scheme):
 		fields = ['100','110','130','700','710','730']
 		subfields = ['a','b','c','d','q']
 	if not rec.get_fields(*fields):
-		write_csv(bbid,'','',scheme,'','') # report out records with no headings
+		write_csv(bbid,'','',scheme,'','') # report out records with none of the selected tags/subfields
 	try:
 		for f in rec.get_fields(*fields):
 			mrx_subs = []
 			h1 = ''
 			h2 = ''
-			src = ''
 			thesaurus = 0
 			if scheme == 'sub':
 				if f.indicators[1] != ' ':
@@ -452,11 +464,12 @@ def check_heading(bbid,rec,scheme):
 				if scheme == 'nam' and re.match('\d00',f.tag) and not f.get_subfields('c','q','d'):
 					continue # continue with next iteration of loop (skip plain names)
 				s = s.encode('utf8').strip()
-				# TODO: a fuller list could be put into a sqlite db to be checked here
-				# Account for abbreviations (using negative lookbehind)
-				re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co. (add other 2-letter abbrev.)
-				re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 3-letter abbrev.)
-				re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc. (add other 4-letter abbrev.)
+				# TODO: get a fuller list
+				# Strip terminating punct. from the end of each subfield, but
+				# account for abbreviations (using negative lookbehind)
+				re.sub('(?<!(\sco))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Co.
+				re.sub('(?<!(\sinc))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Inc.
+				re.sub('(?<!(\sdept))\.','',s,flags=re.IGNORECASE) # preserve '.' at end of Dept.
 				mrx_subs.append(s)
 			if not mrx_subs:
 				continue # continue with next iteration of loop (e.g. prevent empty heading when 730 only has $t)
@@ -465,26 +478,37 @@ def check_heading(bbid,rec,scheme):
 			h = h.replace('.--','. ')
 			h = h.replace('--(',' (') # $q
 			
-			uri = query_4s(h, scheme, thesaurus)
-			src = '4store'
+			uri,src = query_4s(h, scheme, thesaurus) # <= check 4store 
+			
+			terminating = re.search('[\.,]+$',h)
+			punct = terminating.group(0) if terminating is not None else None
+
 			if uri is None: # if nothing found, modify it and try again
-				h1 = h.rstrip('.').rstrip(',')
-				h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
-				uri = query_4s(h1, scheme, thesaurus)
-				src = '4store'
-				if (noidloc == False and uri == None):
-					try:
-						uri,src = query_lc(h,scheme) # <= if still not found in 4store, check cache and ping id.loc.gov 
-					except:
-						pass # as when uri has 'classification'
-					if uri is None or not uri.startswith('http'): # <= if still not found, try without trailing punct.
-						h2 = h.rstrip('.').rstrip(',')
-						h2 = re.sub('(^\[|\]$)','',h2)
+				if punct:
+					h1 = h.rstrip(punct)
+					h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
+					
+					uri,src = query_4s(h1, scheme, thesaurus) # <= check 4store, without terminating punctuation
+
+					if uri == None: # if not found in 4store with terminating punct. try id.loc
 						try:
-							uri,src = query_lc(h2,scheme)
+							uri,src = query_lc(h,scheme) # <= ping id
 						except:
 							pass # as when uri has 'classification'
-			if nomarc == False and ((uri is not None and uri.startswith('http'))):
+						if uri is None or not uri.startswith('http'): # <= if still not found, try again without any trailing punct.
+							if punct:
+								h2 = h.rstrip(punct)
+								h2 = re.sub('(^\[|\]$)','',h2)
+								try:
+									uri,src = query_lc(h2,scheme)
+								except:
+									pass # as when uri has 'classification'
+				else: # if there was no terminating punct., try id.loc
+					try:
+						uri,src = query_lc(h,scheme) 
+					except:
+						pass
+			if nomarc == False and (uri is not None and uri.startswith('http')):
 				# check for existing id.loc $0 and compare if present
 				existing_sub0s = f.get_subfields('0')
 	
@@ -508,11 +532,11 @@ def check_heading(bbid,rec,scheme):
 					prefixuri = '(uri)' + uri
 					pymarc.Field.add_subfield(f,"0",prefixuri)
 					enhanced = True
-
+			
 			if uri is None:
-				if h2 is not None:
+				if h2 is not None and h2 != '':
 					heading = h2
-				elif h2 is not None:
+				elif h1 is not None and h1 != '':
 					heading = h1
 				else:
 					heading = h
@@ -526,11 +550,12 @@ def check_heading(bbid,rec,scheme):
 					heading = h[:-punct] + '['+h[-punct:]+']'
 				else:
 					heading = h
+			
 				
 			if verbose:
 				print('%s | %s | %s | %s | %s' % (bbid, heading.decode('utf8'), uri, f.tag, src))
 			if csvout or nomarc:
-				write_csv(bbid, heading, uri, scheme,f.tag,src)
+				write_csv(bbid, heading, uri, scheme, f.tag, src)
 	
 		if enhanced == False and enhanced_only == True:
 			return enhanced, None # ==> add bib to report, but no marcxml record in the out dir (see read_mrx)
@@ -563,7 +588,7 @@ def check_cache(heading,scheme):
 		with con:
 			con.row_factory = lite.Row
 			cur = con.cursor()
-			cur.execute("SELECT * FROM headings WHERE heading=? and scheme=?",(heading.decode('utf8'),scheme,))
+			cur.execute("SELECT * FROM headings WHERE heading=?",(heading.decode('utf8'),))
 			rows = cur.fetchall()
 			if len(rows) != 0:
 				cached = True
@@ -574,7 +599,7 @@ def check_cache(heading,scheme):
 			if cached == True and date is not None:
 				date2 = datetime.strptime(todaydb,'%Y-%m-%d')
 				date1 = datetime.strptime(str(date),'%Y%m%d')
-				datediff = abs((date2 - date1).days)		
+				datediff = abs((date2 - date1).days)
 			return cached,datediff,uri
 	except:
 		etype,evalue,etraceback = sys.exc_info()
@@ -605,7 +630,7 @@ if __name__ == "__main__":
 	parser.add_argument("-r", "--report", required=False, default=True, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records. Overrides -F.")
 	parser.add_argument("-k", "--keep", required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
-	parser.add_argument("-a",'--age', required=False, dest="maxage",help="Max days after which to re-check id.loc.gov", default=7)
+	parser.add_argument("-a",'--age', required=False, dest="maxage",help="Max days after which to re-check id.loc.gov", default=30)
 	parser.add_argument("-i",'--ignore', required=False, dest="noidloc", default=False, action="store_true", help="Ignore id.loc.gov")
 	parser.add_argument("-C", "--ignore-cache",required=False, default=False, dest="ignore_cache", action="store_true", help="Optionally ignore 404 errors in cache (so check these headings against id.loc.gov again).")
 	parser.add_argument("-e","--enhanced",required=False, default=False, dest="enhanced", action="store_true", help="Just output enhanced records for loading.")
