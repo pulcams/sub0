@@ -78,6 +78,10 @@ sub0
 └── vger.py  <= get the next batch of bibs
 ```
 
+### General idea
+... is something like this ...
+![Something like this](https://raw.githubusercontent.com/pulcams/sub0/master/images/sub0.jpg)
+
 ### Dependencies
  * [4store](http://4store.org/)
  * libxml2 (`sudo apt-get install python-libxml2`)
