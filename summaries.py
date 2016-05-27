@@ -264,8 +264,8 @@ def make_html():
           </div>
           <div id="navbar" class="navbar-collapse collapse">
             <ul class="nav navbar-nav">
-				<li><a href="totals.html">totals</a></li>
-				<li><a href="loads.html">loads</a></li>
+				<li%s><a href="totals.html">totals</a></li>
+				<li%s><a href="loads.html">loads</a></li>
 				<li><a href="about.html">details</a></li>
             </ul>
           </div><!--/.nav-collapse -->
@@ -354,13 +354,13 @@ def make_html():
 		#=============
 		# totals.html
 		#=============
-		totalsfile.write(header % 'totals')
+		totalsfile.write(header % ('totals',' class="active"',''))
 		vizdiv = '''<script src="http://d3js.org/d3.v3.min.js"></script>
 		<p><sub>as of %s...</sub></p>
 		<div id="waffle">
 		</div>
 		<hr />
-		''' % today
+		''' % (today)
 		totalsfile.write(vizdiv)
 		totalsfile.write('<table class="table-condensed">')
 		totalsfile.write('<tr><td>bibs in voyager:</td><td>%s</td></tr>' % vger_bibs)
@@ -463,7 +463,7 @@ def make_html():
 		#=============
 		# loads.html
 		#=============
-		loadsfile.write(header % 'loads')
+		loadsfile.write(header % ('loads','',' class="active"'))
 		loadsfile.write(start_main_table)
 		
 		for k,v in sorted(dct.items()):
