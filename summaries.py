@@ -466,7 +466,7 @@ def make_html():
 		loadsfile.write(header % ('loads','',' class="active"'))
 		loadsfile.write(start_main_table)
 		
-		for k,v in sorted(dct.items()):
+		for k,v in sorted(dct.items(), reverse=True):
 			run = k
 			bibs = v[0][1]
 			first = v[0][2]
