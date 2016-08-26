@@ -12,13 +12,14 @@ Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.
 
 For now anyway, we're just using [known-label retrieval](http://id.loc.gov/techcenter/searching.html), not 'didyoumean' or 'suggest'). 
 
+#### ~~4store~~ 
+
 Install [4store](http://4store.org/) (Ubuntu)
 ```
 sudo apt-get install 4store
 sudo mkdir /var/lib/4store
 ```
 
-#### ~~4store~~ 
 NOTE: Currently using Fuseki (see below)
 
 Import lcsaf...
