@@ -2,9 +2,7 @@
 #-*- coding: utf-8 -*-
 """
 Linked data prep. Get URIs and (optionally) insert $0 into MARCXML records.
-Works with lcnaf and lcsaf in 4store.
-
-sudo ./sh/start-4store.sh
+Works with lcnaf and lcsaf in local dump.
 
 python uris.py -vsnrk
 
@@ -35,7 +33,7 @@ from datetime import date, datetime, timedelta
 from lxml import etree
 
 # TODO:
-# Add option for checking Voyager auth tables
+# Add option for checking Voyager auth tables?
 
 # config
 config = ConfigParser.RawConfigParser()
@@ -67,21 +65,22 @@ def main():
 	Main
 	'''
 	try:
-		s = requests.get('http://localhost:8000/status')
-		n = requests.get('http://localhost:8001/status')
-		if s.status_code == 200:
-			msg = 'lcsaf connection ok\n'
-		if n.status_code == 200:
-			msg += 'lcnaf connection ok\n'
-		if noidloc == True:
-			i = requests.head('http://id.loc.gov')
-			if i.status_code == 200:
-				msg += 'internet connection ok'
+		#s = requests.get('http://localhost:8000/status')
+		#n = requests.get('http://localhost:8001/status')
+		#if s.status_code == 200:
+			#msg = 'lcsaf connection ok\n'
+		#if n.status_code == 200:
+			#msg += 'lcnaf connection ok\n'
+		#if noidloc == True:
+			#i = requests.head('http://id.loc.gov')
+			#if i.status_code == 200:
+				#msg += 'internet connection ok'
 		if verbose:
 			print(msg + '\nHere we go...\n')
 			print('.' * 50)
 	except:
-		sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you, and have a nice day.')
+		pass
+		#sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you, and have a nice day.')
 
 	logging.info('main')
 	
@@ -117,7 +116,7 @@ def setup():
 	'''
 	Create tmp, in, out, reports, load, log dirs, and csv files
 	'''
-	logging.info('seting up')
+	logging.info('setting up')
 
 	if (not os.path.exists(TMPDIR)): #and (justfetch is None):
 		os.makedirs(TMPDIR)
@@ -183,65 +182,87 @@ def cleanup():
 	logging.info('cleaned up')
 
 
-def query_4s(label, scheme, thesaurus):
+def query_local(label, scheme, thesaurus):
 	'''
 	SPARQL query
 	'''
-	src = '4store'
+	src = 'local'
 	
 	# SPARQL endpoint(s), one for each scheme (names, subjects)
 	if scheme == 'nam':
-		host = "http://localhost:8001/"
+		#host = "http://127.0.0.1:8001/"
+		host = "http://localhost:3030/lcnaf2/"
 	elif scheme == 'sub':
-		host = "http://localhost:8000/"
-	label = label.replace('"',"%22") # e.g. bib 568 "Problemna..." (heading with double quotes).
-	# replace combined characters (id does this automatically)
-	label = unicodedata.normalize('NFC', label.decode('utf8'))
-	label = re.sub('\s+',' ',label)
-	# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
-	query = 'SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}' % label
+		#host = "http://127.0.0.1:8000/"
+		host = "http://localhost:3030/lcsaf/"
 
-	# query for variants
-	variant_query = 'SELECT distinct ?s ?o WHERE { {?s ?p ?bn  . ?bn <http://www.loc.gov/mads/rdf/v1#variantLabel> "%s"@en . }}' % label
-	
-	data = { 'query': query}
-	headers={ 'content-type':'application/x-www-form-urlencoded'}
-	
-	r = requests.post(host + "sparql/", data=data, headers=headers )
-	if r.status_code != requests.codes.ok:   # <= would mean something went wrong with 4store
-		msg = '%s, %s' % (label, r.text)
-		sys.exit(msg)
 	try:
-		doc = etree.fromstring(r.text)
-	except:
-		return None,src
+		label = label.strip()
+		label = re.sub('\s+',' ',label)
+		label = label.replace('"','%5C%22') # fuseki TODO: doesn't seem to work
+		#label = label.replace('"','\u0022') # 4store e.g. bib 568 "Problemna..." (heading with double quotes).
+		# replace combined characters (id does this automatically)
+		label = unicodedata.normalize('NFC', label.decode('utf8'))
+		# Modify the Voyager heading variable. TODO: do we want to change them in record, if found, or flag as needing edi?
+		## label = re.sub('(\s[A-Z]\.)([A-Z]\.)',r'\g<1> \g<2>',label) # insert space between initials
+		label = re.sub('(\sb\.)([^\s])',r'\g<1> \g<2>',label) # insert space after ' b.' 
+		label = re.sub('^([A-Z]\.)\s([A-Z]\.)',r'\g<1>\g<2>',label) # remove ' ' between initials at start of string
+		label = re.sub('\(([A-Z]\.)\s([A-Z]\.)\)',r'\g<1>\g<2>',label) # remove ' ' between initials at start of string or in parens
+		label = re.sub('(\sCo$)',r'\g<1>.',label) # insert period after " Co" 
+		label = re.sub('(\s[A-Z]$)',r'\g<1>.',label) # insert period after concluding initial ' A.'
+		label = re.sub('\s(\,)',r'\g<1>',label) # replace ' ,'
+		label = re.sub('([a-z])(\()',r'\g<1> \g<2>',label) # replace 'a(' with 'a ('
 
-	xpth = "//sparql:binding[@name='s'][not(following-sibling::sparql:binding[@name='note'])]/sparql:uri"
+		# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
+		query = '''SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}''' % label
+		
+		# query for variants
+		variant_query = '''SELECT distinct ?s WHERE { {?s ?p ?bn  . ?bn <http://www.loc.gov/mads/rdf/v1#variantLabel> "%s"@en . }}''' % label
 	
-	if thesaurus == 1:
-		xpth += "[contains(.,'childrensSubjects')]"
-	else: 
-		xpth += "[not(contains(.,'childrensSubjects'))]"
+		data = { 'query': query}
+		headers={ 'Content-Type':'application/x-www-form-urlencoded','Accept':'application/sparql-results+xml' }
 
-	if len(doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'})) > 0:
-		for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
-			return triple.text, src
-	else:
-		data = { 'query': variant_query}
-	
-		r = requests.post(host + "sparql/", data=data, headers=headers )
-		if r.status_code != requests.codes.ok:   # <= would mean something went wrong with 4store
+		r = requests.post(host + "sparql", data=data, headers=headers)
+
+		if r.status_code != requests.codes.ok:
 			msg = '%s, %s' % (label, r.text)
 			sys.exit(msg)
 		try:
 			doc = etree.fromstring(r.text)
-			if triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
-				for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
-					return triple.text, src
-			else:
-				None,src
 		except:
 			return None,src
+
+		xpth = "//sparql:binding[@name='s'][not(following-sibling::sparql:binding[@name='note'])]/sparql:uri[. != '(null)']"
+		
+		if thesaurus == 1:
+			xpth += "[contains(.,'childrensSubjects')]"
+		else: 
+			xpth += "[not(contains(.,'childrensSubjects'))]"
+
+		if len(doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'})) > 0:
+			for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+				return triple.text, src
+		else:
+			return None,src
+			data = { 'query': variant_query}
+			
+			r = requests.post(host + "sparql/", data=data, headers=headers )
+			if r.status_code != requests.codes.ok: 
+				msg = '%s, %s' % (label, r.text)
+				sys.exit(msg)
+			try:
+				doc = etree.fromstring(r.text)
+				if len(doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'})) > 0:
+					for triple in doc.xpath(xpth,namespaces={'sparql':'http://www.w3.org/2005/sparql-results#'}):
+						return triple.text, src
+				else:
+					None,src
+			except:
+				return None,src
+
+	except:
+		etype,evalue,etraceback = sys.exc_info()
+		print("query_local problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
 
 
 def read_mrx(mrcrec,names,subjects):
@@ -298,6 +319,8 @@ def read_mrx(mrcrec,names,subjects):
 			scheme = 'sub'
 		etype,evalue,etraceback = sys.exc_info()
 		flag = "read_mrx problem: %s %s %s line %s" % (etype,evalue,etraceback,etraceback.tb_lineno)
+		print(flag)
+
 		if csvout or nomarc: # idea here is to report something out even when mrx has issues
 			write_csv(bbid,flag,'',scheme,'','')
 
@@ -319,7 +342,7 @@ def query_lc(heading, scheme):
 	'''
 	src = 'id.loc.gov'
 	
-	if ignore_cache == False: # First, check the cache
+	if ignore_cache == False: # First, check the cache (if not ignoring it)
 	
 		cached,datediff,uri = check_cache(heading,scheme)
 		
@@ -327,13 +350,14 @@ def query_lc(heading, scheme):
 			src += ' (cache)'
 			return uri,src
 
-	if noidloc == False: 		
-		if (((cached == True and datediff > maxage) or cached == False) or (ignore_cache == True and uri == 'None (404)')):
+	if noidloc == False: # if checking id.loc...
+		if (((cached == True and datediff > maxage) or (cached == False)) or (ignore_cache == True)):
 			# ping id.loc only if not found in cache, or if checked long, long ago
 			heading = heading.replace('&','%26')
 			heading = heading.decode('utf8')
 			to_get = ID_HEADING_RESOLVER + heading
-			headers = {"Accept":"application/xml"}
+			# user-agent became necessary July 2016 (see sm email to BF list 07/29/2016)
+			headers = {"Accept":"application/xml","User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:47.0) Gecko/20100101 Firefox/47.0"}
 			time.sleep(1) # http://id.loc.gov/robots.txt has 3 secs but kh says not necessary w head requests
 			resp = requests.head(to_get, headers=headers, allow_redirects=True)
 			if resp.status_code == 200:
@@ -415,7 +439,7 @@ def cache_it(uri,cached,heading, scheme):
 	con = lite.connect(DB)
 	heading = heading.replace('%26','&')
 	if verbose:
-		print('==> caching %s | already cached: %s | %s | %s' % (uri,cached,heading, scheme))
+		print('==> cache_it() %s | already cached: %s | %s | %s' % (uri,cached,heading, scheme))
 	try:
 		with con:
 			cur = con.cursor() 
@@ -436,10 +460,11 @@ def cache_it(uri,cached,heading, scheme):
 
 def check_heading(bbid,rec,scheme):
 	'''
-	Check a given heading against 4store and, if that fails, id.loc.gov
+	Check a given heading against local dump and, if that fails, id.loc.gov
 	'''
 	enhanced = False
 	heading = ''
+	new_scheme = ''
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
 		fields = ['600','610','611','630','650','651']
@@ -477,37 +502,76 @@ def check_heading(bbid,rec,scheme):
 			h = h.replace(',--',', ')
 			h = h.replace('.--','. ')
 			h = h.replace('--(',' (') # $q
-			
-			uri,src = query_4s(h, scheme, thesaurus) # <= check 4store 
-			
-			terminating = re.search('[\.,]+$',h)
-			punct = terminating.group(0) if terminating is not None else None
 
+			# local ==================================
+			uri,src = query_local(h, scheme, thesaurus) # <= check local dump (with terminating punct)
+			#=========================================
+			
 			if uri is None: # if nothing found, modify it and try again
-				if punct:
+				terminating = re.search('[\.,]+$',h)
+				punct = terminating.group(0) if terminating is not None else None
+				
+				if punct: # if there's terminating punct, will try with and (if necessary) without it
 					h1 = h.rstrip(punct)
-					h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets
-					
-					uri,src = query_4s(h1, scheme, thesaurus) # <= check 4store, without terminating punctuation
+					h1 = re.sub('(^\[|\]$)','',h1) # remove surrounding brackets also
 
-					if uri == None: # if not found in 4store with terminating punct. try id.loc
-						try:
-							uri,src = query_lc(h,scheme) # <= ping id
-						except:
-							pass # as when uri has 'classification'
-						if uri is None or not uri.startswith('http'): # <= if still not found, try again without any trailing punct.
-							if punct:
-								h2 = h.rstrip(punct)
-								h2 = re.sub('(^\[|\]$)','',h2)
+					# local ===================================
+					uri,src = query_local(h1, scheme, thesaurus) # <= check local dump (no terminating punct)
+					#==========================================
+
+					if uri == None: # if not found in local dump try the other scheme (lcnaf v. lcsaf)
+						if scheme == 'sub':
+							new_scheme = 'nam'
+						elif scheme == 'nam':
+							new_scheme = 'sub'
+							
+						# local ==================================	
+						uri,src = query_local(h1, new_scheme, thesaurus) # <= check local dump, other scheme, no terminating punct
+						#=========================================
+
+						if uri == None:
+							# local =================================	
+							uri,src = query_local(h, new_scheme, thesaurus) # <= check local dump, other scheme, with terminating punct
+							#========================================
+						
+							if uri == None: # if still not found in local dump, try id.loc (w and wo trailing punct)
 								try:
-									uri,src = query_lc(h2,scheme)
+									# id.loc =====================
+									uri,src = query_lc(h,scheme) # <= ping id with terminating punct
+									#=============================
 								except:
-									pass # as when uri has 'classification'
-				else: # if there was no terminating punct., try id.loc
-					try:
-						uri,src = query_lc(h,scheme) 
-					except:
-						pass
+									pass # (as when uri has 'classification')
+									
+								if uri is None or not uri.startswith('http'): # <= if still not found, try with no term. punct.
+									if punct:
+										h2 = h.rstrip(punct)
+										h2 = re.sub('(^\[|\]$)','',h2) # remove surrounding brackets also
+										try:
+											# id.loc ======================
+											uri,src = query_lc(h2,scheme) # <= ping id without trailing punct
+											#==============================
+										except:
+											pass # as when uri has 'classification'
+											
+				else: # if there was no terminating punct., try local dump w other scheme, then (if needed) id.loc...
+					
+					if scheme == 'sub':
+						new_scheme = 'nam'
+					elif scheme == 'nam':
+						new_scheme = 'sub'
+
+					# local =====================================		
+					uri,src = query_local(h, new_scheme, thesaurus) # <= check local dump again, other scheme
+					#============================================
+
+					if uri is None:
+						try:
+							# id.loc ===================
+							uri,src = query_lc(h,scheme)
+							#===========================
+						except:
+							pass
+							
 			if nomarc == False and (uri is not None and uri.startswith('http')):
 				# check for existing id.loc $0 and compare if present
 				existing_sub0s = f.get_subfields('0')
