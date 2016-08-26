@@ -199,8 +199,8 @@ def query_local(label, scheme, thesaurus):
 	try:
 		label = label.strip()
 		label = re.sub('\s+',' ',label)
-		label = label.replace('"','%5C%22') # fuseki TODO: doesn't seem to work
-		#label = label.replace('"','\u0022') # 4store e.g. bib 568 "Problemna..." (heading with double quotes).
+		label = label.replace('"','\u005C\u0022') # e.g. bib 568 "Problemna..." (heading with double quotes).
+		#label = label.replace('"','\u0022') # 4store
 		# replace combined characters (id does this automatically)
 		label = unicodedata.normalize('NFC', label.decode('utf8'))
 		# Modify the Voyager heading variable. TODO: do we want to change them in record, if found, or flag as needing edi?
@@ -212,6 +212,7 @@ def query_local(label, scheme, thesaurus):
 		label = re.sub('(\s[A-Z]$)',r'\g<1>.',label) # insert period after concluding initial ' A.'
 		label = re.sub('\s(\,)',r'\g<1>',label) # replace ' ,'
 		label = re.sub('([a-z])(\()',r'\g<1> \g<2>',label) # replace 'a(' with 'a ('
+
 
 		# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
 		query = '''SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}''' % label
