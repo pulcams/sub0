@@ -17,6 +17,10 @@ Install [4store](http://4store.org/) (Ubuntu)
 sudo apt-get install 4store
 sudo mkdir /var/lib/4store
 ```
+
+#### ~~4store~~ 
+NOTE: Currently using Fuseki (see below)
+
 Import lcsaf...
 ```
 sudo 4s-backend-setup lcsaf
@@ -25,6 +29,24 @@ sudo 4s-import --verbose lcsaf ~/Downloads/subjects-skos-20140306.nt
 sudo 4s-httpd lcsaf -p 8000
 ```
 Do the same for lcnaf, using say port 8001 (note: Oct 2014 file takes about 20G of disk space).
+
+#### fuseki
+Download https://jena.apache.org/download/index.cgi
+
+Unzip
+
+To import subjects:
+
+`./fuseki start`
+
+create dataset lcsaf and import id.loc dump via the interface at http://localhost:3030/dataset.html
+
+To import names:
+```
+fuseki stop
+java -Xms1024M -cp fuseki-server.jar tdb.tdbloader --loc ~/mydata ~/Downloads/authoritiesnames.nt /lcnaf
+fuseki start
+```
 
 ### Examples
 Retrieve Voyager records, check names and subjects against lcnaf and lcsaf, and generate enhanced copies as well as csv reports: 
@@ -83,7 +105,8 @@ sub0
 ![Something like this](https://raw.githubusercontent.com/pulcams/sub0/master/images/sub0.jpg)
 
 ### Dependencies
- * [4store](http://4store.org/)
+ * <strike>[4store](http://4store.org/)</strike>
+ * [fuseki](https://jena.apache.org/documentation/serving_data/)
  * libxml2 (`sudo apt-get install python-libxml2`)
  * sqlite3 (`sudo apt-get install sqlite3 libsqlite3-dev`)
  * [pymarc](https://github.com/edsu/pymarc) (`pip install pymarc`)
