@@ -101,10 +101,6 @@ sub0
 └── vger.py  <= get the next batch of bibs
 ```
 
-### General idea
-... is something like this ...
-![Something like this](https://raw.githubusercontent.com/pulcams/sub0/master/images/sub0.jpg)
-
 ### Dependencies
  * <strike>[4store](http://4store.org/)</strike>
  * [fuseki](https://jena.apache.org/documentation/serving_data/)
