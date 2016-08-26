@@ -14,13 +14,13 @@ For now anyway, we're just using [known-label retrieval](http://id.loc.gov/techc
 
 #### ~~4store~~ 
 
+NOTE: Currently using Fuseki (see below)
+
 Install [4store](http://4store.org/) (Ubuntu)
 ```
 sudo apt-get install 4store
 sudo mkdir /var/lib/4store
 ```
-
-NOTE: Currently using Fuseki (see below)
 
 Import lcsaf...
 ```
