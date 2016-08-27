@@ -44,9 +44,9 @@ create dataset lcsaf and import id.loc dump via the interface at http://localhos
 
 To import names:
 ```
-fuseki stop
+./fuseki stop
 java -Xms1024M -cp fuseki-server.jar tdb.tdbloader --loc ~/mydata ~/Downloads/authoritiesnames.nt /lcnaf
-fuseki start
+./fuseki-server --loc /home/myuser/mydata /lcnaf
 ```
 
 ### Examples
