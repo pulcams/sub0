@@ -233,6 +233,12 @@ def make_html():
 	totalsfile = open('./html/totals.html','wb+')
 	loadsfile = open('./html/loads.html','wb+')
 	overall_totals = get_overall_totals(REPORTDIR)
+	n_headings = overall_totals[0]
+	n_found = overall_totals[1]
+	n_notfound = overall_totals[2]
+	s_headings = overall_totals[3]
+	s_found = overall_totals[4]
+	s_notfound = overall_totals[5]
 	sch = ''
 	total_prod = 0
 	total_checked = 0
@@ -370,9 +376,9 @@ def make_html():
 		totalsfile.write('<hr />')
 
 		totalsfile.write('<table class="table-condensed table-bordered table-hover">')
-		totalsfile.write('<tr><td></td><!--<td>enhanced</td>--><td>headings</td><td>found</td><td>not_found</td></tr>')
-		totalsfile.write('<tr><td>names</td><!--<td></td>--><td>%s</td><td><a href="reports/all_names_found.csv">%s</a></td><td><a href="reports/all_names_not_found.csv">%s</a></td></tr>' % (overall_totals[0],overall_totals[1],overall_totals[2]))
-		totalsfile.write('<tr><td>subjects</td><!--<td></td>--><td>%s</td><td><a href="reports/all_subjects_found.csv">%s</a></td><td><a href="reports/all_subjects_not_found.csv">%s</a></td></tr>' % (overall_totals[3],overall_totals[4],overall_totals[5]))
+		totalsfile.write('<tr><td></td><!--<td>enhanced</td>--><td>headings</td><td>found</td><td>not_found</td><td>%</td></tr>')
+		totalsfile.write('<tr><td>names</td><!--<td></td>--><td>%s</td><td><a href="reports/all_names_found.csv">%s</a></td><td><a href="reports/all_names_not_found.csv">%s</a></td><td><div id="pie1"></div></td></tr>' % (n_headings,n_found,n_notfound))
+		totalsfile.write('<tr><td>subjects</td><!--<td></td>--><td>%s</td><td><a href="reports/all_subjects_found.csv">%s</a></td><td><a href="reports/all_subjects_not_found.csv">%s</a></td><td><div id="pie2"></div></td></tr>' % (s_headings,s_found,s_notfound))
 		totalsfile.write('</table>')
 		totalsfile.write('<hr />')
 		totalsfile.write('</div></body>')
@@ -453,11 +459,72 @@ def make_html():
 		          });
 		});
 		
-		</script>
-		</html>
-		'''
+	</script>'''
+
+		pies = '''<script>
+		var w = 30,                        
+	    h = 30,                            
+	    r = 10
+	
+	
+	    name_data = [{label:"found",percentage:%s,value:%s},
+				{label:"not found",percentage:%s,value:%s}];
+	
+	    
+	    subj_data = [{label:"found",percentage:%s,value:%s},
+				{label:"not found",percentage:%s,value:%s}];
+	    
+			var vis = d3.select("#pie1")
+	        .append("svg:svg")
+	        .data([name_data])
+	            .attr("width", w)
+	            .attr("height", h)
+	        .append("svg:g") 
+	            .attr("transform", "translate(" + r + "," + r + ")")
+	        
+	
+	       var vis2 = d3.select("#pie2")
+	        .append("svg:svg")
+	        .data([subj_data])
+	            .attr("width", w)
+	            .attr("height", h)
+	        .append("svg:g") 
+	            .attr("transform", "translate(" + r + "," + r + ")")
+	
+			var arc = d3.svg.arc()
+	        .outerRadius(r);
+	
+			var pie = d3.layout.pie()
+	        .value(function(d) { return d.value; });
+	
+			var arcs = vis.selectAll("g.slice")
+	        .data(pie) 
+	        .enter() 
+	            .append("svg:g")
+	                .attr("class", "slice");
+	        arcs.append("svg:path")
+	                .attr("fill", function(d, i) { return color(i); } )
+	                .attr("d", arc);
+	        arcs.append("svg:title") 
+						.text(function(d) { return d.data.percentage + "%% " + d.data.label; });
+	
+			var arcs = vis2.selectAll("g.slice")
+	        .data(pie) 
+	        .enter() 
+	            .append("svg:g")
+	                .attr("class", "slice");
+	        arcs.append("svg:path")
+	                .attr("fill", function(d, i) { return color(i); } )
+	                .attr("d", arc);
+			arcs.append("svg:title") 
+						.text(function(d) { return d.data.percentage + "%% " + d.data.label; });
+	
+	        </script>''' % ("{:.2}".format(float(n_found)/float(n_headings) * 100),n_found,"{:.2}".format(float(n_notfound)/float(n_headings) * 100),n_notfound,
+	        "{:.2}".format(float(s_found)/float(s_headings) * 100),s_found,"{:.2}".format(float(s_notfound)/float(s_headings) * 100),s_notfound)
+
 		totalsfile.write(d3stuff)
-		totalsfile.write('</script></html>')
+		totalsfile.write(pies)
+		totalsfile.write('</html>')
 		print('wrote totals.html')
 
 		#=============
@@ -474,7 +541,7 @@ def make_html():
 			enhanced = v[0][8]
 			db = v[0][9]
 
-			loadsfile.write('<tr><td><a href="reports/%s">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><!--<td>' % (run,run,bibs,first,last, enhanced,db))
+			loadsfile.write('<tr><td><!--<a href="reports/%s">-->%s<!--</a>--></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><!--<td>' % (run,run,bibs,first,last, enhanced,db))
 			innertablehead = '''<table id="loads" class="table-condensed table-hover" style="font-size:.75em;">'''
 			loadsfile.write(innertablehead)
 			for scheme in sorted(v):
