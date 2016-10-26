@@ -169,6 +169,8 @@ def get_bibdata():
 			data = got.read()
 			conn.close() 
 
+			if justfetch: # for the case of named files rather than dates e.g. 'derrida'
+				REPORTS = REPORTDIR + justfetch
 			f = open(INDIR+TODAY+'.mrx', 'a')
 			f2 = open(REPORTS+'bibs.txt', 'a') # simple log
 	
@@ -227,7 +229,7 @@ if __name__ == "__main__":
 	parser.add_argument("-b", "--bibs",required=False, default=5000, dest="bibstofetch", help="Number of bibs to fetch")
 	parser.add_argument("-v", "--verbose", required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
 	parser.add_argument("-p", "--pyget", required=False, default=False, dest="pyget", action="store_true", help="Get records with Python function using httplib (rather than the default voyager_helpers.rb).")
-	parser.add_argument("-F", "--justfetch", required=False, type=str, dest="justfetch", help="**Just** fetch records listed in the given file given as 'csv/yyyymmdd.csv', assuming this file is up-to-date. Skip getting new list of bib ids.")
+	parser.add_argument("-F", "--justfetch", required=False, type=str, dest="justfetch", help="Fetch records listed in the given file. Skips getting new list of bib ids.")
 	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
 	args = vars(parser.parse_args())
 	bibstofetch = args['bibstofetch']
