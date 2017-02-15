@@ -17,6 +17,7 @@ pmg
 import argparse
 import ConfigParser
 import csv
+import cx_Oracle
 import fileinput
 import glob
 import os
@@ -30,6 +31,14 @@ config.read('./config/uris.cfg')
 REPORTDIR = config.get('env', 'reports')
 BIBS = config.get('env','bibs')
 today = time.strftime('%Y%m%d')
+
+user = config.get('vger', 'user')
+pw = config.get('vger', 'pw')
+sid = config.get('vger', 'sid')
+ip = config.get('vger', 'ip')
+port = config.get('vger', 'port')
+dsn_tns = cx_Oracle.makedsn(ip,port,sid)
+
 
 def main(report):
 	'''
@@ -226,6 +235,23 @@ def total_enhanced(report):
 	return len(set(all_enhanced))
 
 
+def get_sub0_count():
+	total_sub0 = 0
+	db = cx_Oracle.connect(user,pw,dsn_tns)
+	c = db.cursor()
+	sql = """SELECT COUNT(DISTINCT(BIB_ID)) 
+				FROM BIB_DATA 
+				WHERE 
+				(RECORD_SEGMENT LIKE '%0(uri)%'
+				OR
+				RECORD_SEGMENT LIKE '%0http://%')"""
+	c.execute(sql)
+	for row in c:
+		total_sub0 = row[0]
+
+	return str(total_sub0)
+
+
 def make_html():
 	"""
 	Generate a simple html pages: totals and loads
@@ -233,6 +259,7 @@ def make_html():
 	totalsfile = open('./html/totals.html','wb+')
 	loadsfile = open('./html/loads.html','wb+')
 	overall_totals = get_overall_totals(REPORTDIR)
+	total_sub0 = get_sub0_count()
 	n_headings = overall_totals[0]
 	n_found = overall_totals[1]
 	n_notfound = overall_totals[2]
@@ -362,16 +389,19 @@ def make_html():
 		#=============
 		totalsfile.write(header % ('totals',' class="active"',''))
 		vizdiv = '''<script src="http://d3js.org/d3.v3.min.js"></script>
-		<p><sub>as of %s...</sub></p>
+		<p><sub>progress as of %s...</sub></p>
 		<div id="waffle">
 		</div>
 		<hr />
 		''' % (today)
+		percent_vger_enhanced = round((float(total_sub0)/float(vger_bibs) * 100), 2)
 		totalsfile.write(vizdiv)
 		totalsfile.write('<table class="table-condensed">')
 		totalsfile.write('<tr><td>bibs in voyager:</td><td>%s</td></tr>' % vger_bibs)
 		totalsfile.write('<tr><td>records extracted:</td><td>%s</td></tr>' % total_checked)
 		totalsfile.write('<tr><td>records enhanced:</td><td>%s</td></tr>' % total_prod)
+		totalsfile.write('<tr><td style="font-size:.85 em;">total records enhanced*</td><td>%s (%s%%)</td></tr>' % (total_sub0,percent_vger_enhanced))
+		totalsfile.write('<tr><td><span style="font-size:.75em;">*from all sources</span></td><td></td></tr>')
 		totalsfile.write('</table>')
 		totalsfile.write('<hr />')
 
@@ -410,7 +440,7 @@ def make_html():
 		  data.forEach(function(d, i) 
 		  {
 		      d.number = +d.number;
-		      d.units = Math.floor(d.number/squareValue);
+		      d.units = Math.round(d.number/squareValue);
 		      theData = theData.concat(
 		        Array(d.units+1).join(1).split('').map(function()
 		          {
