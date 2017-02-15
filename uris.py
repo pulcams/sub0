@@ -64,23 +64,24 @@ def main():
 	'''
 	Main
 	'''
-	try:
+	#try:
 		#s = requests.get('http://localhost:8000/status')
 		#n = requests.get('http://localhost:8001/status')
+		#s = requests.get('http://localhost:3030/lcsaf/')
+		#n = requests.get('http://localhost:3030/lcnaf2/') 
 		#if s.status_code == 200:
-			#msg = 'lcsaf connection ok\n'
+		#	msg = 'lcsaf connection ok\n'
 		#if n.status_code == 200:
-			#msg += 'lcnaf connection ok\n'
+		#	msg += 'lcnaf connection ok\n'
 		#if noidloc == True:
-			#i = requests.head('http://id.loc.gov')
-			#if i.status_code == 200:
-				#msg += 'internet connection ok'
-		if verbose:
-			print(msg + '\nHere we go...\n')
-			print('.' * 50)
-	except:
-		pass
-		#sys.exit('Run `sudo ./sh/start_4s.sh` and check internet connection. Thank you, and have a nice day.')
+		#	i = requests.head('http://id.loc.gov')
+		#	if i.status_code == 200:
+		#		msg += 'internet connection ok'
+		#if verbose:
+		#	print(msg + '\nHere we go...\n')
+		#	print('.' * 50)
+	#except:
+	#	sys.exit('Start fuseki and/or check internet connection. Thank you, and have a nice day.')
 
 	logging.info('main')
 	
@@ -212,6 +213,8 @@ def query_local(label, scheme, thesaurus):
 		label = re.sub('(\s[A-Z]$)',r'\g<1>.',label) # insert period after concluding initial ' A.'
 		label = re.sub('\s(\,)',r'\g<1>',label) # replace ' ,'
 		label = re.sub('([a-z])(\()',r'\g<1> \g<2>',label) # replace 'a(' with 'a ('
+		label = label.replace('-\L','-L') # ? replace '\L' 509574 Mulher-\Libertação
+		label = re.sub('\\$','',label) # bib 584803 had ' \' at end of subject
 
 
 		# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
@@ -585,17 +588,17 @@ def check_heading(bbid,rec,scheme):
 							enhanced = True
 						elif 'id.loc.gov/authorities/' in existing_sub0: # <= if the url id.loc.gov but is different...
 							pymarc.Field.delete_subfield(f,"0") # <=  ...assume it was wrong and delete it...
-							prefixuri = '(uri)' + uri
+							#prefixuri = '(uri)' + uri
 							pymarc.Field.add_subfield(f,"0",uri) # <= ...then insert the new one.
-							src = 'REPLACED %s with %s' % (existing_sub0,prefixuri)
+							src = 'REPLACED %s with %s' % (existing_sub0,uri)
 							enhanced = True
 						else:
-							prefixuri = '(uri)' + uri
-							pymarc.Field.add_subfield(f,"0",prefixuri)
+							#prefixuri = '(uri)' + uri
+							pymarc.Field.add_subfield(f,"0",uri)
 							enhanced = True
 				else:
-					prefixuri = '(uri)' + uri
-					pymarc.Field.add_subfield(f,"0",prefixuri)
+					#prefixuri = '(uri)' + uri
+					pymarc.Field.add_subfield(f,"0",uri)
 					enhanced = True
 			
 			if uri is None:
