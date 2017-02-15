@@ -226,7 +226,7 @@ def cache_bib(bib):
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Get list of BIB_IDs from Voyager to serve as input for uris.py')
-	parser.add_argument("-b", "--bibs",required=False, default=5000, dest="bibstofetch", help="Number of bibs to fetch")
+	parser.add_argument("-b", "--bibs",required=False, default=10000, dest="bibstofetch", help="Number of bibs to fetch")
 	parser.add_argument("-v", "--verbose", required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
 	parser.add_argument("-p", "--pyget", required=False, default=False, dest="pyget", action="store_true", help="Get records with Python function using httplib (rather than the default voyager_helpers.rb).")
 	parser.add_argument("-F", "--justfetch", required=False, type=str, dest="justfetch", help="Fetch records listed in the given file. Skips getting new list of bib ids.")
