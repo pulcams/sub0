@@ -73,7 +73,7 @@ For reporting, `summaries.py` outputs totals to a TOTALS file as well as an html
 ### Initial workflow
 * wait until late afternoon / early evening
 * `python vger.py` # get list of unsuppressed bibs into ./csv/yyyymmdd.csv
-* `python uris.py -vnsr -F yyyymmdd` # process them, outputting reports as well as marcxml and MARC21 (mrc)
+* `python uris.py -vsnrke -i yyyymmdd` # process them, outputting reports as well as marcxml and MARC21 (.mrc)
 * load mrc file into Voyager using Gary Strawn's [RecordReloader](http://files.library.northwestern.edu/public/RecordReloader/)
 * `python summaries.py -r yyyymmdd` # add stats to index.html file
 * post newly generated index.html and report files to local server
