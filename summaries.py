@@ -157,12 +157,13 @@ def get_overall_totals(report):
 								bib = row[0]
 								heading = row[1]
 								uri = row[2]
+								tag = row[3]
 								if uri <> '' and not uri.startswith('http') and uri != 'lc_uri':
 									writer = csv.writer(nmissing)
-									writer.writerow([bib, heading, uri])
+									writer.writerow([bib, heading, uri, tag])
 								elif uri <> '' and uri != 'lc_uri':
 									writer = csv.writer(nfound)
-									writer.writerow([bib, heading, uri])
+									writer.writerow([bib, heading, uri, tag])
 					else: # subject report
 						with open(thisreport,'r') as csvin, open('./reports/all_subjects_not_found.csv','ab') as smissing, open('./reports/all_subjects_found.csv','ab') as sfound:
 							thiscsv = csv.reader(csvin)
@@ -170,12 +171,13 @@ def get_overall_totals(report):
 								bib = row[0]
 								heading = row[1]
 								uri = row[2]
+								tag = row[3]
 								if uri <> '' and not uri.startswith('http') and uri != 'lc_uri':
 									writer = csv.writer(smissing)
-									writer.writerow([bib, heading, uri])
+									writer.writerow([bib, heading, uri, tag])
 								elif uri <> '' and uri != 'lc_uri':
 									writer = csv.writer(sfound)
-									writer.writerow([bib, heading, uri])
+									writer.writerow([bib, heading, uri, tag])
 
 	total_sub_not_found = sum(1 for line in open('./reports/all_subjects_not_found.csv')) - 1 
 	total_sub_found = sum(1 for line in open('./reports/all_subjects_found.csv')) - 1 
@@ -426,7 +428,11 @@ def make_html():
 
 		//var color = d3.scale.category10();
 		var color = d3.scale.ordinal()
-		    .range(["#d6616b", "#ccc"]);
+		    //.range(["#d6616b", "#ccc"]);
+		    .range(["#79be9c", "#ccc"]);
+
+		var color2 = d3.scale.ordinal()
+		    .range(["#79be9c", "#be7979"]);
 		
 		d3.csv("waffle.csv", function(error, data)
 		{
@@ -533,7 +539,7 @@ def make_html():
 	            .append("svg:g")
 	                .attr("class", "slice");
 	        arcs.append("svg:path")
-	                .attr("fill", function(d, i) { return color(i); } )
+	                .attr("fill", function(d, i) { return color2(i); } )
 	                .attr("d", arc);
 	        arcs.append("svg:title") 
 						.text(function(d) { return d.data.percentage + "%% " + d.data.label; });
@@ -544,7 +550,7 @@ def make_html():
 	            .append("svg:g")
 	                .attr("class", "slice");
 	        arcs.append("svg:path")
-	                .attr("fill", function(d, i) { return color(i); } )
+	                .attr("fill", function(d, i) { return color2(i); } )
 	                .attr("d", arc);
 			arcs.append("svg:title") 
 						.text(function(d) { return d.data.percentage + "%% " + d.data.label; });
