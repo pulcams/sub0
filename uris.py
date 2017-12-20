@@ -2,7 +2,7 @@
 #-*- coding: utf-8 -*-
 """
 Linked data prep. Get URIs and (optionally) insert $0 into MARCXML records.
-Works with lcnaf and lcsaf in local dump.
+Works with lcnaf and lcsaf in local dump. Removed '(uri)' prefix 20170215.
 
 python uris.py -vsnrk
 
@@ -158,6 +158,12 @@ def setup():
 				writer = csv.writer(outfile)
 				writer.writerow(heading)
 
+			enhanced_bibs = REPORTS+'/_enhanced_bibs_'+today+'.csv'
+			with open(enhanced_bibs,'wb+') as enhanced_bib_outfile:
+				enhanced_bib_heading = ['enhanced_bib']
+				writer = csv.writer(enhanced_bib_outfile)
+				writer.writerow(enhanced_bib_heading)
+
 
 def cleanup():
 	'''
@@ -292,12 +298,12 @@ def read_mrx(mrcrec,names,subjects):
 			if names:
 				en,r = check_heading(bbid,rec,'nam')
 				enhanced.append(en)
-				if en == True:
+				if ((enhanced_only == True and en == True) or (enhanced_only == False)):
 					recs.append(r)
 			if subjects: # if just searching subjects, or if a rec only has subjects, no names
 				en,r = check_heading(bbid,rec,'sub')
 				enhanced.append(en) 	
-				if en == True and r not in recs:
+				if ((enhanced_only == True and en == True) or (enhanced_only == False)) and r not in recs:
 					recs.append(r)
 		if nomarc == False:
 			outfile = str.replace(mrcrec,'.xml','') 
@@ -310,10 +316,10 @@ def read_mrx(mrcrec,names,subjects):
 						fh.write(out)
 					except Exception as e:
 						raise						
-		if nomarc == False and ((enhanced_only == True and (True in enhanced)) or (enhanced_only == False)):
+		#if nomarc == False and ((enhanced_only == True and (True in enhanced)) or (enhanced_only == False)):
+		#	print('#########################',nomarc,True in enhanced,enhanced_only)
 			fh.write("</collection>")
 			fh.close()
-			
 	except AttributeError as e:
 		return
 	except:	
@@ -366,8 +372,8 @@ def query_lc(heading, scheme):
 			resp = requests.head(to_get, headers=headers, allow_redirects=True)
 			if resp.status_code == 200:
 				uri = resp.headers["x-uri"]
-				#if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
-				if ('authorities/names' in uri or 'authorities/subjects' in uri):
+				if (scheme == 'nam' and 'authorities/names' in uri) or (scheme == 'sub' and 'authorities/subjects' in uri):
+				#if ('authorities/names' in uri or 'authorities/subjects' in uri):
 					try:
 						resp.headers["x-preflabel"]
 					except KeyError as e: # x-preflabel is not returned for deprecated headings, so just check for it as a test
@@ -407,35 +413,6 @@ def query_lc(heading, scheme):
 		src += ' (ignored)'
 		return None,src
 
-	
-def record_bib(bib):
-	'''
-	Add bib of retrieved record into bibs.db
-	'''
-	con = lite.connect(DB)
-	with con:
-		con.row_factory = lite.Row
-		cur = con.cursor()
-		cur.execute("SELECT * FROM bibs WHERE bbid=?",(bib,))
-		rows = cur.fetchall()
-		if len(rows) == 0:
-			cached = False
-		else:
-			cached = True
-				
-		todaydb = time.strftime('%Y-%m-%d %H:%M:%S')
-		cur = con.cursor() 
-		if cached == False:
-			newbib = (bib,todaydb)
-			cur.executemany("INSERT INTO bibs VALUES(?, ?)", (newbib,))
-		else:
-			updatedbib = (todaydb,bib)
-			cur.executemany("UPDATE bibs SET date=? WHERE bbid=?", (updatedbib,))
-	if con:
-		print('closing sqlite3 connection')
-		con.close()
-
-
 def cache_it(uri,cached,heading, scheme):
 	'''
 	Put uris from id.loc.gov into cache (or update the date checked)
@@ -468,15 +445,15 @@ def check_heading(bbid,rec,scheme):
 	'''
 	enhanced = False
 	heading = ''
-	new_scheme = ''
+	nam_scheme = ''
 	if scheme == 'sub':
 		# get subjects data from these subfields (all but 0,2,3,6,8)
-		fields = ['600','610','611','630','650','651']
+		fields = ['600','610','611','650','651'] # removing 630 20171218
 		subfields = ['a', 'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 
 	'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'x', 'y', 'z', '4']
 	elif scheme == 'nam':
 		# get names data from these subfields
-		fields = ['100','110','130','700','710','730']
+		fields = ['100','110','700','710'] # removing 130, 730 20171218
 		subfields = ['a','b','c','d','q']
 	if not rec.get_fields(*fields):
 		write_csv(bbid,'','',scheme,'','') # report out records with none of the selected tags/subfields
@@ -487,8 +464,9 @@ def check_heading(bbid,rec,scheme):
 			h2 = ''
 			thesaurus = 0
 			if scheme == 'sub':
-				if f.indicators[1] != ' ':
+				if f.indicators[1] in (1,0):
 					thesaurus = int(f.indicators[1]) # 6xx ind2: '1' is LC subject headings for children's literature
+				
 			for s in f.get_subfields(*subfields):
 				if scheme == 'nam' and re.match('\d00',f.tag) and not f.get_subfields('c','q','d'):
 					continue # continue with next iteration of loop (skip plain names)
@@ -523,58 +501,55 @@ def check_heading(bbid,rec,scheme):
 					uri,src = query_local(h1, scheme, thesaurus) # <= check local dump (no terminating punct)
 					#==========================================
 
-					if uri == None: # if not found in local dump try the other scheme (lcnaf v. lcsaf)
-						if scheme == 'sub':
-							new_scheme = 'nam'
-						elif scheme == 'nam':
-							new_scheme = 'sub'
+					if uri == None and scheme == 'sub' and f.tag != '650': # if not 650 try lcnaf
+						if f.tag != '651' or (f.tag == '651' and not f.get_subfields('e','g','4','v','x','y','z','2','3','6','8')):
+							nam_scheme = 'nam' 
 							
-						# local ==================================	
-						uri,src = query_local(h1, new_scheme, thesaurus) # <= check local dump, other scheme, no terminating punct
-						#=========================================
-
-						if uri == None:
-							# local =================================	
-							uri,src = query_local(h, new_scheme, thesaurus) # <= check local dump, other scheme, with terminating punct
-							#========================================
-						
-							if uri == None: # if still not found in local dump, try id.loc (w and wo trailing punct)
-								try:
-									# id.loc =====================
-									uri,src = query_lc(h,scheme) # <= ping id with terminating punct
-									#=============================
-								except:
-									pass # (as when uri has 'classification')
-									
-								if uri is None or not uri.startswith('http'): # <= if still not found, try with no term. punct.
-									if punct:
-										h2 = h.rstrip(punct)
-										h2 = re.sub('(^\[|\]$)','',h2) # remove surrounding brackets also
-										try:
-											# id.loc ======================
-											uri,src = query_lc(h2,scheme) # <= ping id without trailing punct
-											#==============================
-										except:
-											pass # as when uri has 'classification'
+							# local ==================================	
+							uri,src = query_local(h1, nam_scheme, thesaurus) # <= check local dump, other scheme, no terminating punct
+							#=========================================
+	
+							if uri == None:
+								# local =================================	
+								uri,src = query_local(h, nam_scheme, thesaurus) # <= check local dump, other scheme, with terminating punct
+								#========================================
+							
+								if uri == None: # if still not found in local dump, try id.loc (w and wo trailing punct)
+									try:
+										# id.loc =====================
+										uri,src = query_lc(h,scheme) # <= ping id with terminating punct
+										#=============================
+									except:
+										pass # (as when uri has 'classification')
+										
+									if uri is None or not uri.startswith('http'): # <= if still not found, try with no term. punct.
+										if punct:
+											h2 = h.rstrip(punct)
+											h2 = re.sub('(^\[|\]$)','',h2) # remove surrounding brackets also
+											try:
+												# id.loc ======================
+												uri,src = query_lc(h2,scheme) # <= ping id without trailing punct
+												#==============================
+											except:
+												pass # as when uri has 'classification'
 											
 				else: # if there was no terminating punct., try local dump w other scheme, then (if needed) id.loc...
 					
-					if scheme == 'sub':
-						new_scheme = 'nam'
-					elif scheme == 'nam':
-						new_scheme = 'sub'
+					if scheme == 'sub' and f.tag != '650':
+						if f.tag != '651' or (f.tag == '651' and not f.get_subfields('e','g','4','v','x','y','z','2','3','6','8')):
+							nam_scheme = 'nam'
 
-					# local =====================================		
-					uri,src = query_local(h, new_scheme, thesaurus) # <= check local dump again, other scheme
-					#============================================
-
-					if uri is None:
-						try:
-							# id.loc ===================
-							uri,src = query_lc(h,scheme)
-							#===========================
-						except:
-							pass
+							# local =====================================		
+							uri,src = query_local(h, nam_scheme, thesaurus) # <= check local dump again, other scheme
+							#============================================
+		
+							if uri is None:
+								try:
+									# id.loc ===================
+									uri,src = query_lc(h,scheme)
+									#===========================
+								except:
+									pass
 							
 			if nomarc == False and (uri is not None and uri.startswith('http')):
 				# check for existing id.loc $0 and compare if present
@@ -624,11 +599,12 @@ def check_heading(bbid,rec,scheme):
 				print('%s | %s | %s | %s | %s' % (bbid, heading.decode('utf8'), uri, f.tag, src))
 			if csvout or nomarc:
 				write_csv(bbid, heading, uri, scheme, f.tag, src)
-	
-		if enhanced == False and enhanced_only == True:
-			return enhanced, None # ==> add bib to report, but no marcxml record in the out dir (see read_mrx)
-		else:
+
+		if enhanced_only == False or (enhanced_only == True and enhanced == True):
 			return enhanced, rec # ==>
+		elif (enhanced_only == True and enhanced == False):
+			return enhanced, None # ==> add bib to report, but no marcxml record in the out dir (see read_mrx)
+				
 	except:
 		etype,evalue,etraceback = sys.exc_info()
 		print("check_heading problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
@@ -642,6 +618,13 @@ def write_csv(bbid, heading, uri, scheme, tag, src):
 		writer = csv.writer(outfile)
 		row = (bbid, heading, uri, tag, src)
 		writer.writerow(row)
+
+	with open(REPORTS+'/_enhanced_bibs_'+today+'.csv','ab+') as enhanced_bibs_outfile:
+		enhanced_bibs_file = enhanced_bibs_outfile.read()
+		enhanced_bibs_writer = csv.writer(enhanced_bibs_outfile)
+		if bbid not in enhanced_bibs_file:
+			row = (bbid,)
+			enhanced_bibs_writer.writerow(row)
 
 
 def check_cache(heading,scheme):
@@ -696,7 +679,7 @@ if __name__ == "__main__":
 	parser.add_argument("-n", "--names", required=False, default=False, dest="names", action="store_true", help="Get URIs for names.")
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
 	parser.add_argument("-r", "--report", required=False, default=True, dest="csvout", action="store_true", help="Output csv reports as well as MARCXML records.")
-	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records. Overrides -F.")
+	parser.add_argument("-R", "--Report", required=False, default=False, dest="nomarc", action="store_true", help="Output csv reports but do NOT output MARCXML records.")
 	parser.add_argument("-k", "--keep", required=False, default=False, dest="keep", action="store_true", help="Keep IN and TMP dirs.")
 	parser.add_argument("-a",'--age', required=False, dest="maxage",help="Max days after which to re-check id.loc.gov", default=30)
 	parser.add_argument("-i",'--ignore', required=False, dest="noidloc", default=False, action="store_true", help="Ignore id.loc.gov")
