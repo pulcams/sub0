@@ -8,7 +8,7 @@
 
 The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a file of MARCXML records in the `./in` directory. (`vger.py` will grab the next batch of n records from Voyager, keeping a cache in a little sqlite db.)
 
-Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [4store](http://4store.org/). When a given heading isn't found there, the script checks a cache of recent searches against id.loc.gov. If not found in the cache, id.loc.gov can be queried directly.
+Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [fuseki](https://jena.apache.org/download/index.cgi). When a given heading isn't found there, the script checks a cache of recent searches against id.loc.gov. If not found in the cache, id.loc.gov can be queried directly.
 
 For now anyway, we're just using [known-label retrieval](http://id.loc.gov/techcenter/searching.html), not 'didyoumean' or 'suggest'). 
 
@@ -32,6 +32,8 @@ sudo 4s-httpd lcsaf -p 8000
 Do the same for lcnaf, using say port 8001 (note: Oct 2014 file takes about 20G of disk space).
 
 #### fuseki
+(NOTE: when the LCNAF download grew to over 80G in March 2018 we moved Fuseki from a local machine to AWS)
+
 Download https://jena.apache.org/download/index.cgi
 
 Unzip
