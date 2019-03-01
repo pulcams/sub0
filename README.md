@@ -42,12 +42,12 @@ To import subjects:
 
 `./fuseki start`
 
-create dataset lcsaf and import id.loc dump via the interface at http://localhost:3030/dataset.html
+create persistent (not in memory) dataset `lcsaf` through the gui and import id.loc dump via the interface at http://localhost:3030/dataset.html
 
 To import names:
 ```
 ./fuseki stop
-java -Xms1024M -cp fuseki-server.jar tdb.tdbloader --loc ~/mydata ~/Downloads/authoritiesnames.nt /lcnaf
+java -Xms1024M -cp fuseki-server.jar tdb.tdbloader --loc ~/mydata ~/Downloads/authoritiesnames.nt
 ./fuseki-server --loc /home/myuser/mydata /lcnaf
 ```
 
