@@ -111,7 +111,7 @@ def get_totals(csvreport):
 			if bib != '':
 				total += 1
 		#lastbib = bib # the last bib per scheme report (e.g. last bib in nam report, which can differ from last bib in sub report)
-		enhanced = 0		
+		enhanced = 0
 		for k,v in bibdict.iteritems():
 			if 'y' in v:
 				writer = csv.writer(enhanced_file)
@@ -121,7 +121,7 @@ def get_totals(csvreport):
 				writer = csv.writer(nonenhanced_file)
 				writer.writerow([k])
 
-	return [report,bibs_downloaded,firstbib,finalbib,enhanced,int(total)-int(noheading),found,notfound,total_vger_bibs]
+	return [report,bibs_downloaded,firstbib,finalbib,enhanced,int(total)-int(noheading),found,int(noheading),total_vger_bibs]
 
 
 def get_overall_totals(report):
@@ -308,7 +308,7 @@ def make_html():
       </nav>"""
 
 	start_main_table="""<table class="table-condensed table-bordered table-hover">
-<tr  bgcolor="#F0F8FF"><th>run</th><th>records</th><th>first_bibid</th><th>last_bibid</th><th>recs_enhanced</th><th>vger_db</th><!--<th width="400px">breakdown</th>--></tr>
+<tr  bgcolor="#F0F8FF"><th>run</th><th>records</th><th>first_bib</th><th>last_bib</th><th>recs_enhanced</th><th>vger_db</th><!--<th width="400px">breakdown</th>--></tr>
 <!--<tr bgcolor="#F0F8FF"><td colspan="6"></td><td>
 <table class="table-condensed" width="100%%" style="font-size:.75em;"><tr bgcolor="#F0F8FF"><td width="20%%">scheme</td><td width="20%%">enhanced</td><td width="20%%">headings</td><td width="20%%">found</td><td width="20%%">not_found</td></tr></table></td></tr>-->
 """
@@ -577,7 +577,7 @@ def make_html():
 			enhanced = v[0][8]
 			db = v[0][9]
 
-			loadsfile.write('<tr><td><!--<a href="reports/%s">-->%s<!--</a>--></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><!--<td>' % (run,run,bibs,first,last, enhanced,db))
+			loadsfile.write('<tr><td><!--<a href="reports/%s">-->%s<!--</a>--></td><td>%s</td><td><a href="https://pulsearch.princeton.edu/catalog/%s/staff_view">%s</a></td><td><a href="https://pulsearch.princeton.edu/catalog/%s/staff_view">%s</a></td><td>%s</td><td>%s</td><!--<td>' % (run,run,bibs,first,first,last,last,enhanced,db))
 			innertablehead = '''<table id="loads" class="table-condensed table-hover" style="font-size:.75em;">'''
 			loadsfile.write(innertablehead)
 			for scheme in sorted(v):
