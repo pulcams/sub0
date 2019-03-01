@@ -141,6 +141,7 @@ def setup():
 		os.makedirs(TOLOAD)
 	
 	schemelist = []
+	
 	if (csvout or nomarc) and (subjects or names):
 		if subjects:
 			schemelist.append('sub')
@@ -198,7 +199,7 @@ def query_local(label, scheme, thesaurus):
 	# SPARQL endpoint(s), one for each scheme (names, subjects)
 	if scheme == 'nam':
 		#host = "http://127.0.0.1:8001/"
-		host = "http://localhost:3030/lcnaf2/"
+		host = "http://localhost:3030/lcnaf/"
 	elif scheme == 'sub':
 		#host = "http://127.0.0.1:8000/"
 		host = "http://localhost:3030/lcsaf/"
@@ -221,10 +222,11 @@ def query_local(label, scheme, thesaurus):
 		label = re.sub('([a-z])(\()',r'\g<1> \g<2>',label) # replace 'a(' with 'a ('
 		label = label.replace('-\L','-L') # ? replace '\L' 509574 Mulher-\Libertação
 		label = re.sub('\\$','',label) # bib 584803 had ' \' at end of subject
-
+		label = re.sub('\\\\','%5c') # bib 6181483 includes firm 'Aranda\Lasch'
 
 		# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
-		query = '''SELECT ?s ?note WHERE { ?s ?p "%s"@en . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}''' % label
+		# !isBlank() might be replaced by isIRI()
+		query = '''SELECT ?s ?note WHERE { ?s ?p "%s"@en . FILTER (!isBlank(?s)) . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}''' % label
 		
 		# query for variants
 		variant_query = '''SELECT distinct ?s WHERE { {?s ?p ?bn  . ?bn <http://www.loc.gov/mads/rdf/v1#variantLabel> "%s"@en . }}''' % label
@@ -302,7 +304,7 @@ def read_mrx(mrcrec,names,subjects):
 					recs.append(r)
 			if subjects: # if just searching subjects, or if a rec only has subjects, no names
 				en,r = check_heading(bbid,rec,'sub')
-				enhanced.append(en) 	
+				enhanced.append(en)
 				if ((enhanced_only == True and en == True) or (enhanced_only == False)) and r not in recs:
 					recs.append(r)
 		if nomarc == False:
