@@ -409,8 +409,8 @@ def make_html():
 
 		totalsfile.write('<table class="table-condensed table-bordered table-hover">')
 		totalsfile.write('<tr><td></td><!--<td>enhanced</td>--><td>headings</td><td>not_found</td><td>found</td><td>%</td></tr>')
-		totalsfile.write('<tr><td>names</td><!--<td></td>--><td>%s</td><td><a href="reports/all_names_not_found.csv">%s</a></td><td><a href="reports/all_names_found.csv">%s</a></td><td><div id="pie1"></div></td></tr>' % (n_headings,n_notfound,n_found))
-		totalsfile.write('<tr><td>subjects</td><!--<td></td>--><td>%s</td><td><a href="reports/all_subjects_not_found.csv">%s</a></td><td><a href="reports/all_subjects_found.csv">%s</a></td><td><div id="pie2"></div></td></tr>' % (s_headings,s_notfound,s_found))
+		totalsfile.write('<tr><td>names</td><!--<td></td>--><td>%s</td><td>%s</td><td>%s</td><td><div id="pie1"></div></td></tr>' % (n_headings,n_notfound,n_found))
+		totalsfile.write('<tr><td>subjects</td><!--<td></td>--><td>%s</td><td>%s</td><td>%s</td><td><div id="pie2"></div></td></tr>' % (s_headings,s_notfound,s_found))
 		totalsfile.write('</table>')
 		totalsfile.write('<hr />')
 		totalsfile.write('</div></body>')
