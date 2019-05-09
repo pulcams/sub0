@@ -96,14 +96,11 @@ def get_bib_total():
 def ask_the_oracle(last_bib):
 	'''
 	Starting from the last bib retrieved, query VGER for the next n bibs (n specified in bibstofetch variable). 
-	'''
-	con = lite.connect(DB)
-	
+	'''	
 	q = """SELECT b.BIB_ID
-	FROM BIB_TEXT b
-	LEFT JOIN BIB_MASTER bmr ON b.BIB_ID = bmr.BIB_ID
+	FROM BIB_MASTER b
 	WHERE
-	bmr.SUPPRESS_IN_OPAC <> 'Y'
+	b.SUPPRESS_IN_OPAC <> 'Y'
 	AND b.BIB_ID > %s
 	AND ROWNUM <= %s
 	ORDER BY BIB_ID""" % (last_bib, bibstofetch)
