@@ -32,9 +32,6 @@ import urllib
 from datetime import date, datetime, timedelta
 from lxml import etree
 
-# TODO:
-# Add option for checking Voyager auth tables?
-
 # config
 config = ConfigParser.RawConfigParser()
 config.read('./config/uris.cfg')
@@ -222,14 +219,14 @@ def query_local(label, scheme, thesaurus):
 		label = re.sub('([a-z])(\()',r'\g<1> \g<2>',label) # replace 'a(' with 'a ('
 		label = label.replace('-\L','-L') # ? replace '\L' 509574 Mulher-\Libertação
 		label = re.sub('\\$','',label) # bib 584803 had ' \' at end of subject
-		label = re.sub('\\\\','%5c') # bib 6181483 includes firm 'Aranda\Lasch'
+		label = re.sub('\\\\','%5c',label) # bib 6181483 includes firm 'Aranda\Lasch'
 
 		# query for notes as well, to eliminate headings that are to be used as subdivisions (see e.g. 'Marriage')
 		# !isBlank() might be replaced by isIRI()
 		query = '''SELECT ?s ?note WHERE { ?s ?p "%s"@en . FILTER (!isBlank(?s)) . OPTIONAL {?s <http://www.w3.org/2004/02/skos/core#note> ?note .FILTER(CONTAINS(?note,"subdivision")) .}}''' % label
 		
 		# query for variants
-		variant_query = '''SELECT distinct ?s WHERE { {?s ?p ?bn  . ?bn <http://www.loc.gov/mads/rdf/v1#variantLabel> "%s"@en . }}''' % label
+		variant_query = '''SELECT distinct ?s WHERE {?s ?p ?bn  . ?bn <http://www.loc.gov/mads/rdf/v1#variantLabel> "%s"@en . }''' % label
 	
 		data = { 'query': query}
 		headers={ 'Content-Type':'application/x-www-form-urlencoded','Accept':'application/sparql-results+xml' }
@@ -674,9 +671,9 @@ def mrx2mrc(mrx):
 		msg = "problem converting mrx to mrc. %s" % evalue
 	logging.info(msg)
 
-			
+
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description='Generate hold reports.')
+	parser = argparse.ArgumentParser(description='Generate uri reports.')
 	parser.add_argument("-v", "--verbose", required=False, default=False, dest="verbose", action="store_true", help="Runtime feedback.")
 	parser.add_argument("-n", "--names", required=False, default=False, dest="names", action="store_true", help="Get URIs for names.")
 	parser.add_argument("-s", "--subjects", required=False, default=False, dest="subjects", action="store_true", help="Get URIs for subjects.")
