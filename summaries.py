@@ -58,7 +58,7 @@ def main(report):
 	for t in all_totals:
 		write_totals(t[0],t[1],t[2],t[3],t[4],t[5],t[6],t[7],db,totes,t[8])
 
-		
+
 def get_totals(csvreport):
 	'''
 	Get totals from given run's reports
@@ -229,11 +229,23 @@ def total_enhanced(report):
 	'''
 	filepath = REPORTS
 	all_enhanced = []
+	all_not_enhanced = []
 	for filename in os.listdir(filepath):
 		if re.match('.*'+report+'_enhanced.csv',filename):
 			with open(os.path.join(filepath,filename),'r') as f:
 				for line in f:
 					all_enhanced.append(line)
+		elif re.match('.*'+report+'_nonenhanced.csv',filename):
+			with open(os.path.join(filepath,filename),'r') as f:
+				for line in f:
+					all_not_enhanced.append(line)
+	with open(filepath + 'enhanced_bibs.txt','wb+') as enhanced:
+		for b in set(all_enhanced):
+			enhanced.write(b)
+	with open(filepath + 'nonenhanced_bibs.txt','wb+') as nonenhanced:
+		for b in set(all_not_enhanced) - set(all_enhanced):
+			nonenhanced.write(b)
+	
 	return len(set(all_enhanced))
 
 
@@ -399,11 +411,12 @@ def make_html():
 		percent_vger_enhanced = round((float(total_sub0)/float(vger_bibs) * 100), 2)
 		totalsfile.write(vizdiv)
 		totalsfile.write('<table class="table-condensed">')
-		totalsfile.write('<tr><td>bibs in voyager:</td><td>%s</td></tr>' % vger_bibs)
+		totalsfile.write('<tr><td>bibs in voyager*:</td><td>%s</td></tr>' % vger_bibs)
 		totalsfile.write('<tr><td>records extracted:</td><td>%s</td></tr>' % total_checked)
 		totalsfile.write('<tr><td>records enhanced:</td><td>%s</td></tr>' % total_prod)
-		totalsfile.write('<tr><td style="font-size:.85 em;">total records enhanced*</td><td>%s (%s%%)</td></tr>' % (total_sub0,percent_vger_enhanced))
-		totalsfile.write('<tr><td><span style="font-size:.75em;">*from all sources</span></td><td></td></tr>')
+		totalsfile.write('<tr><td style="font-size:.85 em;">total records enhanced**</td><td>%s (%s%%)</td></tr>' % (total_sub0,percent_vger_enhanced))
+		totalsfile.write('<tr><td><span style="font-size:.75em;">*<pre>SELECT COUNT(DISTINCT(BIB_ID)) FROM BIB_MASTER WHERE SUPPRESS_IN_OPAC = 'N'</pre></span></td><td></td></tr>')
+		totalsfile.write('<tr><td><span style="font-size:.75em;">**from all sources</span></td><td></td></tr>')
 		totalsfile.write('</table>')
 		totalsfile.write('<hr />')
 
@@ -561,7 +574,7 @@ def make_html():
 		totalsfile.write(d3stuff)
 		totalsfile.write(pies)
 		totalsfile.write('</html>')
-		print('wrote totals.html')
+		#print('wrote totals.html')
 
 		#=============
 		# loads.html
@@ -596,7 +609,7 @@ def make_html():
 
 	loadsfile.write(end_main_table)
 	loadsfile.write('</body></html>')
-	print('wrote loads.html')
+	#print('wrote loads.html')
 		
 
 if __name__ == "__main__":
@@ -619,8 +632,8 @@ if __name__ == "__main__":
 	try:
 		main(report)
 		make_html()
-		print('done!')
+		#print('done!')
 	except:
 		etype,evalue,etraceback = sys.exc_info()
-		print('problem-o %s %s' % (str(etype),str(evalue)))
+		#print('problem-o %s %s' % (str(etype),str(evalue)))
 
