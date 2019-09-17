@@ -32,9 +32,12 @@ import urllib
 from datetime import date, datetime, timedelta
 from lxml import etree
 
+# TODO:
+# Add option for checking Voyager auth tables?
+
 # config
 config = ConfigParser.RawConfigParser()
-config.read('./config/uris.cfg')
+config.read('/home/local/PRINCETON/pmgreen/sub0/config/uris.cfg')
 OUTDIR = config.get('env', 'outdir')
 INDIR = config.get('env', 'indir')
 TMPDIR = config.get('env', 'tmpdir')
@@ -61,36 +64,24 @@ def main():
 	'''
 	Main
 	'''
-	#try:
-		#s = requests.get('http://localhost:8000/status')
-		#n = requests.get('http://localhost:8001/status')
-		#s = requests.get('http://localhost:3030/lcsaf/')
-		#n = requests.get('http://localhost:3030/lcnaf2/') 
-		#if s.status_code == 200:
-		#	msg = 'lcsaf connection ok\n'
-		#if n.status_code == 200:
-		#	msg += 'lcnaf connection ok\n'
-		#if noidloc == True:
-		#	i = requests.head('http://id.loc.gov')
-		#	if i.status_code == 200:
-		#		msg += 'internet connection ok'
-		#if verbose:
-		#	print(msg + '\nHere we go...\n')
-		#	print('.' * 50)
-	#except:
-	#	sys.exit('Start fuseki and/or check internet connection. Thank you, and have a nice day.')
+	logging.info('starting main() function')
 
-	logging.info('main')
-	
-	mrcrecs = os.walk(INDIR).next()[2]
-	mrcrecs.sort(key=alphanum_key)
-	if not mrcrecs:
-		sys.exit('-'*75+'\nThere are no marcxml records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75)
-	else:
-		for mrcrec in mrcrecs:
-			if verbose:
-				print('current file is %s' % mrcrec)
-			read_mrx(mrcrec,names,subjects)
+	try:
+		mrcrecs = os.walk(INDIR).next()[2]
+		mrcrecs.sort(key=alphanum_key)
+		if not mrcrecs:
+			msg = '-'*75+'\nThere are no marcxml records in the IN directory (or IN doens\'t exist). Add some and try again.\n'+'-'*75
+			logging.info(msg)
+			sys.exit(msg)
+		else:
+			for mrcrec in mrcrecs:
+				msg = 'current file is %s' % mrcrec
+				logging.info(msg)
+				if verbose:
+					print(msg)
+				read_mrx(mrcrec,names,subjects)
+	except Exception,e:
+		logging.info(str(e))
 
 
 def try_int(s):
@@ -182,7 +173,8 @@ def cleanup():
 	if csvout:
 		msg = 'reports are in reports dir.'
 		logging.info(msg)
-	print('See ya.' + '\n' + '.'*50)
+	if verbose:
+		print('See ya.' + '\n' + '.'*50)
 	
 	logging.info('cleaned up')
 
@@ -196,10 +188,12 @@ def query_local(label, scheme, thesaurus):
 	# SPARQL endpoint(s), one for each scheme (names, subjects)
 	if scheme == 'nam':
 		#host = "http://127.0.0.1:8001/"
-		host = "http://localhost:3030/lcnaf/"
+		#host = "http://localhost:3030/lcnaf/"
+		host = "http://ec2-52-201-199-177.compute-1.amazonaws.com:3030/lcnaf/"
 	elif scheme == 'sub':
 		#host = "http://127.0.0.1:8000/"
-		host = "http://localhost:3030/lcsaf/"
+		#host = "http://localhost:3030/lcsaf/"
+		host = "http://ec2-52-201-199-177.compute-1.amazonaws.com:3030/lcsaf/"
 
 	try:
 		label = label.strip()
@@ -343,7 +337,7 @@ def read_mrx(mrcrec,names,subjects):
 
 	if (keep == False):
 		os.remove(INDIR+mrcrec)
-		
+
 
 def query_lc(heading, scheme):
 	'''
@@ -411,6 +405,7 @@ def query_lc(heading, scheme):
 	else:
 		src += ' (ignored)'
 		return None,src
+
 
 def cache_it(uri,cached,heading, scheme):
 	'''
@@ -607,12 +602,13 @@ def check_heading(bbid,rec,scheme):
 	except:
 		etype,evalue,etraceback = sys.exc_info()
 		print("check_heading problem %s %s %s line: %s" % (etype,evalue,etraceback,etraceback.tb_lineno))
-		
+
 
 def write_csv(bbid, heading, uri, scheme, tag, src):
 	'''
 	Write out csv reports, one each for names ('_nam_') and subjects ('_sub_')
 	'''
+	# TODO sqlite db
 	with open(REPORTS+'/_'+scheme+'_'+today+'.csv','ab+') as outfile:
 		writer = csv.writer(outfile)
 		row = (bbid, heading, uri, tag, src)
@@ -621,7 +617,7 @@ def write_csv(bbid, heading, uri, scheme, tag, src):
 	with open(REPORTS+'/_enhanced_bibs_'+today+'.csv','ab+') as enhanced_bibs_outfile:
 		enhanced_bibs_file = enhanced_bibs_outfile.read()
 		enhanced_bibs_writer = csv.writer(enhanced_bibs_outfile)
-		if bbid not in enhanced_bibs_file:
+		if bbid not in enhanced_bibs_file and (uri and uri.startswith('http')):
 			row = (bbid,)
 			enhanced_bibs_writer.writerow(row)
 
@@ -696,7 +692,7 @@ if __name__ == "__main__":
 	nomarc = args['nomarc']
 	subjects = args['subjects']
 	verbose = args['verbose']
-	
+
 	logging.info('='*50)
 	setup()
 	main()
