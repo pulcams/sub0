@@ -415,7 +415,7 @@ def make_html():
 		totalsfile.write('<tr><td>records extracted:</td><td>%s</td></tr>' % total_checked)
 		totalsfile.write('<tr><td>records enhanced:</td><td>%s</td></tr>' % total_prod)
 		totalsfile.write('<tr><td style="font-size:.85 em;">total records enhanced**</td><td>%s (%s%%)</td></tr>' % (total_sub0,percent_vger_enhanced))
-		totalsfile.write('<tr><td><span style="font-size:.75em;">*<pre>SELECT COUNT(DISTINCT(BIB_ID)) FROM BIB_MASTER WHERE SUPPRESS_IN_OPAC = 'N'</pre></span></td><td></td></tr>')
+		totalsfile.write('<tr><td><span style="font-size:.75em;">*`SELECT COUNT(DISTINCT(BIB_ID)) FROM BIB_MASTER<br>WHERE SUPPRESS_IN_OPAC = \'N\'`</span></td><td></td></tr>')
 		totalsfile.write('<tr><td><span style="font-size:.75em;">**from all sources</span></td><td></td></tr>')
 		totalsfile.write('</table>')
 		totalsfile.write('<hr />')
