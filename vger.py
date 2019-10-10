@@ -90,7 +90,9 @@ def get_bib_total():
 		for row in list(r):
 			bib = str(row[0])
 			writer.writerow(['BIB_ID',bib]) # stick the total no of unsuppressed bibs next to col header
-	print('wrote bibs total to ' + BIBS + picklist + '.csv')
+	msg = 'wrote bibs total to ' + BIBS + picklist + '.csv'
+	if verbose:
+		print(msg)
 	
  
 def ask_the_oracle(last_bib):
@@ -122,7 +124,9 @@ def ask_the_oracle(last_bib):
 		for row in list(r):
 			bib = str(row[0])
 			writer.writerow([bib])
-	print('wrote list of bibs to ' + BIBS + picklist + '.csv')
+	msg = 'wrote list of bibs to ' + BIBS + picklist + '.csv'
+	if verbose:
+		print(msg)
 
 
 def get_bibdata_rb():
@@ -131,10 +135,16 @@ def get_bibdata_rb():
 	'''
 	try:
 		subprocess.Popen(['ruby',VOYAGER_HELPER,picklist]).wait()
-		logging.info('got bibdata using get_bibdata.rb')
+		msg = 'got bibdata using get_bibdata.rb'
+		if verbose:
+			print(msg)
+		logging.info(msg)
 	except:
 		etype,evalue,etraceback = sys.exc_info()
-		print("get_bibdata_rb problem: %s" % evalue)
+		msg = "get_bibdata_rb problem: %s" % evalue
+		if verbose:
+			print(msg)
+		logging.info(msg)
 
 
 def get_bibdata():
@@ -187,9 +197,11 @@ def get_bibdata():
 
 			# add to bibs.db with the date/time that record was extracted (check later to avoid overwriting)
 			cache_bib(bibid) 
-			
+
+			msg = "(%s) Got %s" % (count, bibid)
 			if verbose:
-				print("(%s) Got %s" % (count, bibid))
+				print(msg)
+			logging.info(msg)
 	
 		f.writelines("</collection>")
 		f.close()
