@@ -1,20 +1,25 @@
 # sub0
 
-### under construction (naturally)
+<i>This was a preliminary URI enhancement effort at PUL that ran from 2016-2019. (Tip: If you're searching around for something to easily enhance your MARC records, you might check out [MarcEdit](http://marcedit.reeset.net/)'s MARCNext tools.)</i>
 
-<i>This is for local experimentation at PUL. If you're searching around for something to enhance your MARC records, you might check out [MarcEdit](http://marcedit.reeset.net/)'s MARCNext tools.</i>
+<b>Linked data prep.</b> Retrieved URIs and (optionally) inserted $0 (subfield 0, sub0) into MARCXML records, in bulk.
 
-<b>Linked data prep.</b> Retrieve URIs and (optionally) insert $0 (subfield 0, sub0) into MARCXML records, in bulk.
+The starting point was sequential lists of Voyager bib ids (`./csv` directory), or a file of MARCXML records in the `./in` directory. (`vger.py` grabbed the next batch of n records from Voyager, keeping a cache in a little sqlite db.) 
 
-The starting point is a list of Voyager bib ids in a csv file in the `./csv` directory, or a file of MARCXML records in the `./in` directory. (`vger.py` will grab the next batch of n records from Voyager, keeping a cache in a little sqlite db.)
+* First bib id: 1 (2016.03.17)
+* Last  bib id: 11729570 (2019.12.07)
 
-Name and subject authority files are downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [fuseki](https://jena.apache.org/download/index.cgi). When a given heading isn't found there, the script checks a cache of recent searches against id.loc.gov. If not found in the cache, id.loc.gov can be queried directly.
+Name and subject authority files were downloaded from [id.loc.gov](http://id.loc.gov/download/) (skos/rdf nt) and imported into [fuseki](https://jena.apache.org/download/index.cgi). When a given heading wasn't found there, the script checked a cache of recent searches against id.loc.gov. If not found in the cache, id.loc.gov can be queried directly.
 
-For now anyway, we're just using [known-label retrieval](http://id.loc.gov/techcenter/searching.html), not 'didyoumean' or 'suggest'). 
+We used [known-label retrieval](http://id.loc.gov/techcenter/searching.html), not 'didyoumean' or 'suggest'). 
+
+Known issues: 
+* name-titles were not accounted for
+
 
 #### ~~4store~~ 
 
-NOTE: Currently using Fuseki (see below)
+NOTE: Moved to Fuseki (see below)
 
 Install [4store](http://4store.org/) (Ubuntu)
 ```
